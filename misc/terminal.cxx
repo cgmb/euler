@@ -1,0 +1,84 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include "terminal.h"
+
+// http://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
+
+static struct termios g_orig_termios;
+
+void u_clear_screen() {
+  write(STDIN_FILENO, "\x1b[2J", 4); // clear
+  write(STDIN_FILENO, "\x1b[H", 3);  // reposition cursor
+}
+
+void clear_screen(buffer* buf) {
+  buffer_append(buf, "\x1b[2J", 4); // clear
+  buffer_append(buf, "\x1b[H", 3);  // reposition cursor
+}
+
+void hide_cursor(buffer* buf) {
+  buffer_append(buf, "\x1b[?25l", 6);
+}
+
+void show_cursor(buffer* buf) {
+  buffer_append(buf, "\x1b[?25h", 6);
+}
+
+void die(const char* msg) {
+  u_clear_screen();
+  perror(msg);
+  exit(1);
+}
+
+void disable_raw_mode() {
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_orig_termios) == -1) {
+    die("failed to disable raw mode");
+  }
+}
+
+void enable_raw_mode() {
+  atexit(disable_raw_mode);
+  if (tcgetattr(STDIN_FILENO, &g_orig_termios) == -1) {
+    die("failed to enable raw mode");
+  }
+  struct termios raw = g_orig_termios;
+/*
+  raw.c_lflag &= ~(ECHO | ICANON);
+  raw.c_oflag &= ~(OPOST);
+*/
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  raw.c_oflag &= ~(OPOST);
+  raw.c_cflag |= (CS8);
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+  raw.c_cc[VMIN] = 0;
+  raw.c_cc[VTIME] = 1;
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
+    die("failed to enable raw mode");
+  }
+}
+
+void buffer_append(buffer* buf, const char* s, int len) {
+  char* data = (char*)realloc(buf->data, buf->len + len);
+  if (!data) {
+    die("failed to reallocate buffer");
+  }
+  memcpy(&data[buf->len], s, len);
+  buf->data = data;
+  buf->len += len;
+}
+
+void buffer_write(buffer* buf) {
+  write(STDIN_FILENO, buf->data, buf->len);
+}
+
+void buffer_clear(buffer* buf) {
+  buf->len = 0;
+}
+
+void buffer_free(buffer* buf) {
+  free(buf->data);
+}

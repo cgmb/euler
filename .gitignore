@@ -1,0 +1,8 @@
+# build files
+.build
+.debug
+/hydro-*.png
+
+# editor files
+*.swp
+/.ycm_extra_conf.py*
