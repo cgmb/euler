@@ -41,7 +41,7 @@ void sim_init() {
   }
 
   std::mt19937 rng_engine(123456789u);
-  std::uniform_real_distribution<float> distribution(0.f, 0.25f);
+  std::uniform_real_distribution<float> distribution(0.f, 0.5f);
   auto rng = [&](){ return distribution(rng_engine); };
 
   // setup fluid markers
