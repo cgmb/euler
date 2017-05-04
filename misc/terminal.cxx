@@ -28,6 +28,10 @@ void show_cursor(buffer* buf) {
   buffer_append(buf, "\x1b[?25h", 6);
 }
 
+void u_show_cursor() {
+  write(STDIN_FILENO, "\x1b[?25h", 6);
+}
+
 void die(const char* msg) {
   u_clear_screen();
   perror(msg);
@@ -42,6 +46,7 @@ void disable_raw_mode() {
 
 void enable_raw_mode() {
   atexit(disable_raw_mode);
+  atexit(u_show_cursor);
   if (tcgetattr(STDIN_FILENO, &g_orig_termios) == -1) {
     die("failed to enable raw mode");
   }
