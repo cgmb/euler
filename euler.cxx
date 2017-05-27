@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -10,23 +11,23 @@
 #include "math/vec2f.h"
 #include "misc/terminal.h"
 
-const size_t X = 10;
-const size_t Y = 10;
+const size_t X = 20;
+const size_t Y = 20;
 
 const float k_s = 1; // side length
 const float k_invs = 1/k_s;
 const float k_d = 1.0; // density
 const float k_invd = 1/k_d;
 
-float g_p[Y][X];
-float g_u[Y][X];
-float g_v[Y][X];
-float g_utmp[Y][X];
-float g_vtmp[Y][X];
+float g_u[Y][X]; // [Y][X-1]
+float g_v[Y][X]; // [Y-1][X]
+float g_utmp[Y][X]; // [Y][X-1]
+float g_vtmp[Y][X]; // [Y-1][X]
 
 bool g_solid[Y][X];
 
 bool g_pause;
+unsigned g_simulate_steps;
 
 struct sparse_entry_t {
   int8_t a_diag;
@@ -34,17 +35,107 @@ struct sparse_entry_t {
   int8_t a_plus_j;
 } g_a[Y][X];
 
-const size_t N = 4*4*4;
+const size_t N = 8*8*4;
 vec2f g_markers[N];
 uint8_t g_marker_count[Y][X];
+uint8_t g_old_marker_count[Y][X];
 
-const float k_g = -9.81;
+const float k_g = -10.f;
+
+float clampf(float min, float x, float max) {
+  if (x < min) {
+    return min;
+  } else if (x > max) {
+    return max;
+  } else {
+    return x;
+  }
+}
+
+int clampi(int min, int value, int max) {
+  if (value < min) {
+    return min;
+  } else if (value > max) {
+    return max;
+  } else {
+    return value;
+  }
+}
+
+void refresh_marker_counts() {
+  memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
+  memset(g_marker_count, '\0', sizeof(g_marker_count));
+  for (size_t i = 0; i < N; ++i) {
+    int x = (int)floorf(g_markers[i].x()*k_invs);
+    int y = (int)floorf(g_markers[i].y()*k_invs);
+    g_marker_count[y][x]++;
+  }
+}
+
+bool was_water(size_t y, size_t x) {
+  return g_old_marker_count[y][x] > 0;
+}
+
+bool is_water(size_t y, size_t x) {
+  return g_marker_count[y][x] > 0;
+}
+
+void extrapolate_velocity_field() {
+  // extrapolate u
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X-1; ++x) {
+      bool was_invalid = !was_water(y,x) && !was_water(y,x+1);
+      if (was_invalid && (is_water(y,x) || is_water(y,x+1))) {
+        size_t y_lower = y>0 ? y-1 : 0;
+        size_t x_lower = x>0 ? x-1 : 0;
+        size_t y_upper = y+1<Y ? y+1 : y;
+        size_t x_upper = x+2<X ? x+1 : x;
+        float total = 0.f;
+        size_t count = 0;
+        for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
+          for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
+            if (was_water(y_u,x_u) || was_water(y_u,x_u+1)) {
+              total += g_u[y_u][x_u];
+              count++;
+            }
+          }
+        }
+        assert(count > 0);
+        g_u[y][x] = total / count;
+      }
+    }
+  }
+
+  // extrapolate v
+  for (size_t y = 0; y < Y-1; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      bool was_invalid = !was_water(y,x) && !was_water(y+1,x);
+      if (was_invalid && (is_water(y,x) || is_water(y+1,x))) {
+        size_t y_lower = y>0 ? y-1 : 0;
+        size_t x_lower = x>0 ? x-1 : 0;
+        size_t y_upper = y+2<Y ? y+1 : y;
+        size_t x_upper = x+1<X ? x+1 : x;
+        float total = 0.f;
+        size_t count = 0;
+        for (size_t y_v = y_lower; y_v <= y_upper; ++y_v) {
+          for (size_t x_v = x_lower; x_v <= x_upper; ++x_v) {
+            if (was_water(y_v,x_v) || was_water(y_v+1,x_v)) {
+              total += g_v[y_v][x_v];
+              count++;
+            }
+          }
+        }
+        assert(count > 0);
+        g_v[y][x] = total / count;
+      }
+    }
+  }
+}
 
 void sim_init() {
   // setup walls
   for (size_t i = 0; i < X; ++i) {
     g_solid[0][i] = true;
-    g_solid[Y-1][i] = true;
   }
   for (size_t i = 0; i < Y; ++i) {
     g_solid[i][0] = true;
@@ -55,51 +146,145 @@ void sim_init() {
   std::uniform_real_distribution<float> distribution(0.f, 0.5f);
   auto rng = [&](){ return distribution(rng_engine); };
 
-  // setup fluid markers
+  // setup fluid markers, 4 per cell, jittered
   size_t idx = 0;
-  for (size_t i = 1; i < 5; ++i) {
-    for (size_t j = Y-2; j > Y-6; --j) {
+  for (size_t i = 1; i < 9; ++i) {
+    for (size_t j = 11; j < 19; ++j) {
       for (size_t k = 0; k < 4; ++k) {
         float x = i + (k < 2 ? 0 : 0.5f) + rng();
         float y = j + (k % 2 ? 0 : 0.5f) + rng();
+        assert(idx < N);
         g_markers[idx++] = k_s*vec2f{x,y};
+      }
+    }
+  }
+  refresh_marker_counts();
+}
+
+/*
+float interpolate(float q[Y][X], float x, float y) {
+  x = clampf(0, x, X-1);
+  y = clampf(0, y, Y-1);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floord = (int)x_floor;
+  int x_ceild = std::min(x_floord+1, int(X)-1);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floord = (int)y_floor;
+  int y_ceild = std::min(y_floord+1, int(Y)-1);
+
+  float y1_mid = (1-y_frac)*q[y_floord][x_floord] + y_frac*q[y_ceild][x_floord];
+  float y2_mid = (1-y_frac)*q[y_floord][x_ceild] + y_frac*q[y_ceild][x_ceild];
+  return (1-x_frac)*y1_mid + x_frac*y2_mid;
+}
+*/
+
+void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X-1; ++x) {
+      if (is_water(y,x) || is_water(y,x+1)) {
+        float dx = u[y][x];
+        // we could check if either of the two squares around each
+        // vertical component is water, but that would mean checking
+        // four squares instead of two, and doing bounds checks.
+        // Let's just consider two because I'm not sure that allowing
+        // fluid to interact diagonally like that actually helps.
+        float div = 0.f;
+        float vv[4] = {};
+        if (is_water(y,x)) {
+          vv[0] = v[y][x];
+          div += 1.f;
+          if (y > 0) {
+            vv[1] = v[y-1][x];
+            div += 1.f;
+          }
+        }
+        if (is_water(y,x+1)) {
+          vv[2] = v[y][x+1];
+          div += 1.f;
+          if (y > 0) {
+            vv[3] = v[y-1][x+1];
+            div += 1.f;
+          }
+        }
+        float dy = (vv[0] + vv[1] + vv[2] + vv[3]) / div;
+        float prev_x = x - dx*dt*k_invs;
+        float prev_y = y - dy*dt*k_invs;
+
+
+        // bilinear interpolation
+        prev_x = clampf(0, prev_x, X-2);
+        prev_y = clampf(0, prev_y, Y-1);
+
+        float x_floor;
+        float x_frac = modff(prev_x, &x_floor);
+        int x_floori = (int)x_floor;
+        int x_ceili = std::min(x_floori+1, int(X)-2);
+
+        float y_floor;
+        float y_frac = modff(prev_y, &y_floor);
+        int y_floori = (int)y_floor;
+        int y_ceili = std::min(y_floori+1, int(Y)-1);
+
+        // bilinearly interpolate between the 4 surrounding points, excluding
+        // any points that do not have water
+        bool w[2][2];
+        w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori,x_floori+1);
+        w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori,x_ceili+1);
+        w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili,x_floori+1);
+        w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili,x_ceili+1);
+
+        assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
+
+        // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
+        // are out of water, but the x interpolation will take care of that.
+        float y1_frac;
+        if (!w[0][0]) {
+          y1_frac = 1.f;
+        } else if (!w[1][0]) {
+          y1_frac = 0.f;
+        } else {
+          y1_frac = y_frac;
+        }
+        float y1_mid = (1-y1_frac)*u[y_floori][x_floori] + y1_frac*u[y_ceili][x_floori];
+
+        float y2_frac;
+        if (!w[0][1]) {
+          y2_frac = 1.f;
+        } else if (!w[1][1]) {
+          y2_frac = 0.f;
+        } else {
+          y2_frac = y_frac;
+        }
+        float y2_mid = (1-y2_frac)*u[y_floori][x_ceili] + y2_frac*u[y_ceili][x_ceili];
+
+        float x0_frac;
+        if (!w[0][0] && !w[1][0]) {
+          x0_frac = 1.f;
+        } else if (!w[0][1] && !w[1][1]) {
+          x0_frac = 0.f;
+        } else {
+          x0_frac = x_frac;
+        }
+        out[y][x] = (1-x0_frac)*y1_mid + x0_frac*y2_mid;
       }
     }
   }
 }
 
-float interpolate(float q[Y][X], float x, float y) {
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floord = (int)x_floor;
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floord = (int)y_floor;
-
-  float y1_mid = (1-y_frac)*q[y_floord][x_floord] + y_frac*q[y_floord+1][x_floord];
-  float y2_mid = (1-y_frac)*q[y_floord][x_floord+1] + y_frac*q[y_floord+1][x_floord+1]; // todo: if x or y == Y < 0 || [x,y] > [X,Y]
-  return (1-x_frac)*y1_mid + x_frac*y2_mid;
-}
-
-void advectu(float u[Y][X], float v[Y][X], float dt,
-  float q[Y][X], float out[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      float dx = u[y][x];
-      float dy = (v[y][x-1] + v[y][x] + v[y+1][x-1] + v[y+1][x]) / 4; // todo: if x == 0, y == Y
-      float prev_x = x - dx*dt*k_invs;
-      float prev_y = y - dy*dt*k_invs;
-      out[y][x] = interpolate(q, prev_x, prev_y);
-    }
-  }
-}
-
+/*
 void advectv(float u[Y][X], float v[Y][X], float dt,
   float q[Y][X], float out[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
+  for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      float dx = (u[y-1][x] + u[y][x] + u[y-1][x+1] + u[y][x+1]) / 4; // todo: if x == 0, y == Y
+      float a = y > 0 ? u[y-1][x] : 0;
+      float b = u[y][x];
+      float c = y > 0 && x+1 < X ? u[y-1][x+1] : 0;
+      float d = x+1 < X ? u[y][x+1] : 0;
+      float dx = (a + b + c + d) / 4;
       float dy = v[y][x];
       float prev_x = x - dx*dt*k_invs;
       float prev_y = y - dy*dt*k_invs;
@@ -107,15 +292,227 @@ void advectv(float u[Y][X], float v[Y][X], float dt,
     }
   }
 }
+*/
+
+void advectv(float u[Y][X], float v[Y][X], float dt,
+  float out[Y][X]) {
+  for (size_t y = 0; y < Y-1; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x) || is_water(y+1,x)) {
+        float dy = v[y][x];
+        // we could check if either of the two squares around each
+        // horizontal component is water, but that would mean checking
+        // four squares instead of two, and doing bounds checks.
+        // Let's just consider two because I'm not sure that allowing
+        // fluid to interact diagonally like that actually helps.
+        float div = 0.f;
+        float uu[4] = {};
+        if (is_water(y,x)) {
+          uu[0] = u[y][x];
+          div += 1.f;
+          if (x > 0) {
+            uu[1] = u[y][x-1];
+            div += 1.f;
+          }
+        }
+        if (is_water(y+1,x)) {
+          uu[2] = u[y+1][x];
+          div += 1.f;
+          if (x > 0) {
+            uu[3] = u[y+1][x-1];
+            div += 1.f;
+          }
+        }
+        float dx = (uu[0] + uu[1] + uu[2] + uu[3]) / div;
+        float prev_x = x - dx*dt*k_invs;
+        float prev_y = y - dy*dt*k_invs;
+
+
+        // bilinear interpolation
+        prev_x = clampf(0, prev_x, X-1);
+        prev_y = clampf(0, prev_y, Y-2);
+
+        float x_floor;
+        float x_frac = modff(prev_x, &x_floor);
+        int x_floori = (int)x_floor;
+        int x_ceili = std::min(x_floori+1, int(X)-1);
+
+        float y_floor;
+        float y_frac = modff(prev_y, &y_floor);
+        int y_floori = (int)y_floor;
+        int y_ceili = std::min(y_floori+1, int(Y)-2);
+
+        // bilinearly interpolate between the 4 surrounding points, excluding
+        // any points that do not have water
+        bool w[2][2];
+        w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori+1,x_floori);
+        w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori+1,x_ceili);
+        w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili+1,x_floori);
+        w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili+1,x_ceili);
+
+        assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
+
+        // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
+        // are out of water, but the x interpolation will take care of that.
+        float y1_frac;
+        if (!w[0][0]) {
+          y1_frac = 1.f;
+        } else if (!w[1][0]) {
+          y1_frac = 0.f;
+        } else {
+          y1_frac = y_frac;
+        }
+        float y1_mid = (1-y1_frac)*v[y_floori][x_floori] + y1_frac*v[y_ceili][x_floori];
+
+        float y2_frac;
+        if (!w[0][1]) {
+          y2_frac = 1.f;
+        } else if (!w[1][1]) {
+          y2_frac = 0.f;
+        } else {
+          y2_frac = y_frac;
+        }
+        float y2_mid = (1-y2_frac)*v[y_floori][x_ceili] + y2_frac*v[y_ceili][x_ceili];
+
+        float x0_frac;
+        if (!w[0][0] && !w[1][0]) {
+          x0_frac = 1.f;
+        } else if (!w[0][1] && !w[1][1]) {
+          x0_frac = 0.f;
+        } else {
+          x0_frac = x_frac;
+        }
+        out[y][x] = (1-x0_frac)*y1_mid + x0_frac*y2_mid;
+      }
+    }
+  }
+}
+
+float interpolate_u(float u[Y][X], float y, float x) {
+  // bilinear interpolation
+  x = clampf(0, x, X-2);
+  y = clampf(0, y, Y-1);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floori = (int)x_floor;
+  int x_ceili = std::min(x_floori+1, int(X)-2);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floori = (int)y_floor;
+  int y_ceili = std::min(y_floori+1, int(Y)-1);
+
+  // bilinearly interpolate between the 4 surrounding points, excluding
+  // any points that do not have water
+  bool w[2][2];
+  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori,x_floori+1);
+  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori,x_ceili+1);
+  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili,x_floori+1);
+  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili,x_ceili+1);
+
+  assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
+
+  // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
+  // are out of water, but the x interpolation will take care of that.
+  float y1_frac;
+  if (!w[0][0]) {
+    y1_frac = 1.f;
+  } else if (!w[1][0]) {
+    y1_frac = 0.f;
+  } else {
+    y1_frac = y_frac;
+  }
+  float y1_mid = (1-y1_frac)*u[y_floori][x_floori] + y1_frac*u[y_ceili][x_floori];
+
+  float y2_frac;
+  if (!w[0][1]) {
+    y2_frac = 1.f;
+  } else if (!w[1][1]) {
+    y2_frac = 0.f;
+  } else {
+    y2_frac = y_frac;
+  }
+  float y2_mid = (1-y2_frac)*u[y_floori][x_ceili] + y2_frac*u[y_ceili][x_ceili];
+
+  float x0_frac;
+  if (!w[0][0] && !w[1][0]) {
+    x0_frac = 1.f;
+  } else if (!w[0][1] && !w[1][1]) {
+    x0_frac = 0.f;
+  } else {
+    x0_frac = x_frac;
+  }
+  return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
+}
+
+float interpolate_v(float v[Y][X], float y, float x) {
+  // bilinear interpolation
+  x = clampf(0, x, X-1);
+  y = clampf(0, y, Y-2);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floori = (int)x_floor;
+  int x_ceili = std::min(x_floori+1, int(X)-1);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floori = (int)y_floor;
+  int y_ceili = std::min(y_floori+1, int(Y)-2);
+
+  // bilinearly interpolate between the 4 surrounding points, excluding
+  // any points that do not have water
+  bool w[2][2];
+  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori+1,x_floori);
+  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori+1,x_ceili);
+  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili+1,x_floori);
+  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili+1,x_ceili);
+
+  assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
+
+  // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
+  // are out of water, but the x interpolation will take care of that.
+  float y1_frac;
+  if (!w[0][0]) {
+    y1_frac = 1.f;
+  } else if (!w[1][0]) {
+    y1_frac = 0.f;
+  } else {
+    y1_frac = y_frac;
+  }
+  float y1_mid = (1-y1_frac)*v[y_floori][x_floori] + y1_frac*v[y_ceili][x_floori];
+
+  float y2_frac;
+  if (!w[0][1]) {
+    y2_frac = 1.f;
+  } else if (!w[1][1]) {
+    y2_frac = 0.f;
+  } else {
+    y2_frac = y_frac;
+  }
+  float y2_mid = (1-y2_frac)*v[y_floori][x_ceili] + y2_frac*v[y_ceili][x_ceili];
+
+  float x0_frac;
+  if (!w[0][0] && !w[1][0]) {
+    x0_frac = 1.f;
+  } else if (!w[0][1] && !w[1][1]) {
+    x0_frac = 0.f;
+  } else {
+    x0_frac = x_frac;
+  }
+  return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
+}
 
 vec2f velocity_at(vec2f pos) {
-  float u_x = pos.x()*k_invs - 0.5f; // todo: x < 0.5
-  float u_y = pos.y()*k_invs;        // todo: y < 0
-  float v_x = pos.x()*k_invs;        // todo: y < 0
-  float v_y = pos.y()*k_invs - 0.5f; // todo: y < 0.5
+  float u_x = pos.x()*k_invs - 1.f;
+  float u_y = pos.y()*k_invs - 0.5f;
+  float v_x = pos.x()*k_invs - 0.5f;
+  float v_y = pos.y()*k_invs - 1.f;
 
-  float x = interpolate(g_u, u_x, u_y);
-  float y = interpolate(g_v, v_x, v_y);
+  // out-of-bounds is handled in interpolate
+  float x = interpolate_u(g_u, u_y, u_x);
+  float y = interpolate_v(g_v, v_y, v_x);
   return vec2f{x,y};
 }
 
@@ -125,6 +522,7 @@ void advect_markers(float dt) {
   for (size_t i = 0; i < N; ++i) {
     vec2f p = g_markers[i];
     vec2f v = velocity_at(p);
+    fprintf(stderr, "m[%2lu] | p: %f,%f    v: %f,%f\n", i, p.x(), p.y(), v.x(), v.y());
     if (v.x() == 0.f && v.y() == 0.f) {
       continue;
     }
@@ -163,7 +561,7 @@ void advect_markers(float dt) {
 }
 
 void apply_body_forces(float v[Y][X], float dt) {
-  for (size_t y = 0; y < Y; ++y) {
+  for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       v[y][x] += k_g * dt;
     }
@@ -175,24 +573,20 @@ int8_t nonsolid_neighbor_count(size_t y, size_t x) { // todo: X,Y bounds
            - g_solid[y-1][x] - g_solid[y+1][x];
 }
 
-bool is_water(size_t y, size_t x) {
-  return g_marker_count[y][x] > 0; // todo: X,Y bounds
-}
-
 int8_t get_a_minus_i(size_t y, size_t x) {
-  return g_a[y][x-1].a_plus_i; // todo: x == 0
+  return x>0 ? g_a[y][x-1].a_plus_i : 0;
 }
 
 int8_t get_a_minus_j(size_t y, size_t x) {
-  return g_a[y-1][x].a_plus_j; // todo: y == 0
+  return y>0 ? g_a[y-1][x].a_plus_j : 0;
 }
 
-void apply_preconditioner(float r[Y][X], float z[Y][X]) {
-  memcpy(z, r, sizeof(float)*Y*X); // skip!
+void apply_preconditioner(double r[Y][X], double z[Y][X]) {
+  memcpy(z, r, sizeof(double)*Y*X); // skip!
 }
 
-float mat_dot(float a[Y][X], float b[Y][X]) {
-  float total = 0.f;
+double mat_dot(double a[Y][X], double b[Y][X]) {
+  double total = 0.f;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -203,7 +597,7 @@ float mat_dot(float a[Y][X], float b[Y][X]) {
   return total;
 }
 
-float all_zero(float r[Y][X]) {
+double all_zero(double r[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -216,12 +610,12 @@ float all_zero(float r[Y][X]) {
   return true;
 }
 
-float inf_norm(float r[Y][X]) {
-  float maximum = r[0][0];
+double inf_norm(double r[Y][X]) {
+  double maximum = 0.f;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        float a = fabsf(r[y][x]);
+        double a = fabs(r[y][x]);
         if (a > maximum) {
           maximum = a;
         }
@@ -231,7 +625,7 @@ float inf_norm(float r[Y][X]) {
   return maximum;
 }
 
-void update_search(float s[Y][X], float z[Y][X], float beta) {
+void update_search(double s[Y][X], double z[Y][X], double beta) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -241,22 +635,22 @@ void update_search(float s[Y][X], float z[Y][X], float beta) {
   }
 }
 
-void apply_a(float s[Y][X], float out[Y][X]) {
+void apply_a(double s[Y][X], double out[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         out[y][x] = g_a[y][x].a_diag * s[y][x]
-                  + g_a[y][x].a_plus_i * s[y][x+1]
-                  + g_a[y][x].a_plus_j * s[y+1][x]
-                  + get_a_minus_i(y,x) * s[y][x-1]
-                  + get_a_minus_j(y,x) * s[y-1][x];
+                  + g_a[y][x].a_plus_i * (x+1 < X && is_water(y,x+1) ? s[y][x+1] : 0)
+                  + g_a[y][x].a_plus_j * (y+1 < Y && is_water(y+1,x) ? s[y+1][x] : 0)
+                  + get_a_minus_i(y,x) * (x>0 && is_water(y,x-1) ? s[y][x-1] : 0)
+                  + get_a_minus_j(y,x) * (y>0 && is_water(y-1,x) ? s[y-1][x] : 0);
       }
     }
   }
 }
 
 // c += a*b
-void fmadd(float a[Y][X], float b, float c[Y][X]) {
+void fmadd(double a[Y][X], double b, double c[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -266,92 +660,252 @@ void fmadd(float a[Y][X], float b, float c[Y][X]) {
   }
 }
 
-void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
-  const float c = -k_invd*k_invs*k_invs * dt;
-  const float invc = 1/c;
-  float d[Y][X] = {}; // divergence / c
+void get_dense_a(int q[Y*X][Y*X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      d[y][x] = -k_invs * invc * (u[y][x] - u[y][x-1] + v[y][x] - v[y-1][x]); // todo: handle x, y < 0
+      if (is_water(y, x)) {
+        q[X*y+x][X*y+x] = g_a[y][x].a_diag;
+        if (x > 0)
+          q[X*y+x][X*y+x-1] = get_a_minus_i(y,x);
+        if (x+1 < X)
+          q[X*y+x][X*y+x+1] = g_a[y][x].a_plus_i;
+        if (y > 0)
+          q[X*y+x][X*(y-1)+x] = get_a_minus_j(y,x);
+        if (y+1 < X)
+          q[X*y+x][X*(y+1)+x] = g_a[y][x].a_plus_j;
+      }
     }
   }
+}
+
+void print_fluid_matrix(FILE* f, const char* name, int q[Y*X][Y*X]) {
+  fprintf(f, "%s = [", name);
+  for (size_t y0 = 0; y0 < Y; ++y0) {
+    for (size_t x0 = 0; x0 < X; ++x0) {
+      for (size_t y1 = 0; y1 < Y; ++y1) {
+        for (size_t x1 = 0; x1 < X; ++x1) {
+          if (is_water(y0,x0) && is_water(y1,x1)) {
+            fprintf(f, "% 2d ", q[y0*X+x0][y1*X+x1]);
+          }
+        }
+      }
+      if (is_water(y0,x0)) {
+        fprintf(f, "; ");
+      }
+    }
+  }
+  fprintf(f, "]\n");
+}
+
+void print_fluid_vector(FILE* f, const char* name, float q[Y][X]) {
+  fprintf(f, "%s = [", name);
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x)) {
+        fprintf(f, "%f ", q[y][x]);
+      }
+    }
+  }
+  fprintf(f, "].'\n");
+}
+
+void print_matrix(FILE* f, const char* name, float q[Y][X]) {
+  fprintf(f, "%s = [", name);
+  for (size_t y = Y; y--;) {
+    for (size_t x = 0; x < X; ++x) {
+      fprintf(f, "%f ", q[y][x]);
+    }
+    fprintf(f, ";\n");
+  }
+  fprintf(f, "]\n");
+}
+
+void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
+  const double c = -k_d*k_s*k_s / dt; // -density * dt^2 / dt
+  double d0[Y][X] = {}; // divergence * c
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x)) {
+        float up = x>0 ? u[y][x-1] : 0;
+        float vp = y>0 ? v[y-1][x] : 0;
+        d0[y][x] = c * k_invs * (u[y][x] - up + v[y][x] - vp);
+      } else {
+        // not really neccessary, but prevents uninitialized reads with memcpy
+        d0[y][x] = 0.f;
+      }
+    }
+  }
+  
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         g_a[y][x].a_diag = nonsolid_neighbor_count(y, x);
-        g_a[y][x].a_plus_i = is_water(y,x+1) ? -1 : 0; // todo: x == X
-        g_a[y][x].a_plus_j = is_water(y+1,x) ? -1 : 0; // todo: y == Y
+        g_a[y][x].a_plus_i = x<X-1 && is_water(y,x+1) ? -1 : 0;
+        g_a[y][x].a_plus_j = y<Y-1 && is_water(y+1,x) ? -1 : 0;
       }
     }
   }
 
   const size_t max_iterations = 100;
-  const float tol = 1e-6f;
+  const double tol = 1e-6f;
 
   // conjugate gradient
-  float p[Y][X] = {}; // pressure guess
-  float r[Y][X];      // residual
-  memcpy(r, d, sizeof(r));
+  double p[Y][X] = {}; // pressure guess
+  double r[Y][X];      // residual
+  memcpy(r, d0, sizeof(r));
   if (!all_zero(r)) {
-    float z[Y][X];      // auxilliary vector
+    double z[Y][X];      // auxilliary vector
     apply_preconditioner(r, z);
-    float s[Y][X];      // search vector
+    double s[Y][X];      // search vector
     memcpy(s, z, sizeof(s));
 
-    float sigma = mat_dot(z,r);
+    double sigma = mat_dot(z,r);
     for (size_t i = 0; i < max_iterations; ++i) {
       apply_a(s, z);
-      float alpha = sigma / mat_dot(z,s);
+
+      double alpha = sigma / mat_dot(z,s);
       fmadd(s, alpha, p);  // p += alpha*s
-      fmadd(z, -alpha, r); // r -= alpha*r
+      fmadd(z, -alpha, r); // r -= alpha*z
+
       if (inf_norm(r) <= tol) {
         break;
       }
 
       apply_preconditioner(r, z);
-      memcpy(s, z, sizeof(s));
 
-      float sigma_new = mat_dot(z,r);
-      float beta = sigma_new / sigma;
+      double sigma_new = mat_dot(z,r);
+      double beta = sigma_new / sigma;
       update_search(s,z,beta);
       sigma = sigma_new;
     }
   }
 
-  for (size_t y = 0; y < Y-1; ++y) { // range right?
-    for (size_t x = 0; x < X-1; ++x) { // range right?
-      if (is_water(y, x)) {
-        uout[y][x] = u[y][x] - k_invd * k_invs * dt * (p[y][x+1] - p[y][x]); // todo: if x == X
-        vout[y][x] = v[y][x] - k_invd * k_invs * dt * (p[y+1][x] - p[y][x]); // todo: if y == Y
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X-1; ++x) {
+      if (g_solid[y][x] || g_solid[y][x+1]) { // todo: unnecessary? probably same as !is_water
+        uout[y][x] = 0.f;
+      } else if (is_water(y,x) || is_water(y,x+1)) {
+        uout[y][x] = u[y][x] - k_invd * k_invs * dt * (p[y][x+1] - p[y][x]);
+      } else { // both cells are air
+        uout[y][x] = 0.f;
+      }
+    }
+  }
+
+  for (size_t y = 0; y < Y-1; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (g_solid[y][x] || g_solid[y+1][x]) {
+        vout[y][x] = 0.f;
+      } else if (is_water(y,x) || is_water(y+1,x)) {
+        vout[y][x] = v[y][x] - k_invd * k_invs * dt * (p[y+1][x] - p[y][x]);
+      } else { // both cells are air
+        vout[y][x] = 0.f;
       }
     }
   }
 }
 
-void refresh_marker_counts() {
-  memset(g_marker_count, '\0', sizeof(g_marker_count));
-  for (size_t i = 0; i < N; ++i) {
-    int x = (int)floorf(g_markers[i].x()*k_invs);
-    int y = (int)floorf(g_markers[i].y()*k_invs);
-    g_marker_count[y][x]++;
+float sq(float x) {
+  return x*x;
+}
+
+float maxabs_u(float q[Y][X]) {
+  float max = 0;
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X-1; ++x) {
+      float value = fabsf(q[y][x]);
+      if (value > max) {
+        max = value;
+      }
+    }
+  }
+  return max;
+}
+
+float maxabs_v(float q[Y][X]) {
+  float max = 0;
+  for (size_t y = 0; y < Y-1; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      float value = fabsf(q[y][x]);
+      if (value > max) {
+        max = value;
+      }
+    }
+  }
+  return max;
+}
+
+void zero_horizontal_velocity_bounds(float u[Y][X]) {
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X-1; ++x) {
+      // not really neccessary to zero air cells, but makes debugging easier
+      bool is_air = !is_water(y,x) && !is_water(y,x+1);
+      if (is_air || g_solid[y][x] || g_solid[y][x+1]) {
+        u[y][x] = 0.f;
+      }
+    }
   }
 }
 
-#include <fenv.h>
+void zero_vertical_velocity_bounds(float v[Y][X]) {
+  for (size_t y = 0; y < Y-1; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      // not really neccessary to zero air cells, but makes debugging easier
+      bool is_air = !is_water(y,x) && !is_water(y+1,x);
+      if (is_air || g_solid[y][x] || g_solid[y+1][x]) {
+        v[y][x] = 0.f;
+      }
+    }
+  }
+}
+
+float calculate_timestep(float frame_time, float minimum_step) {
+  // Brison suggests a limit of five for stability, but my implementaiton of
+  // advection and extrapolation assume that new fluid cells are within one
+  // grid cell of old fluid cells
+  const float m = 0.75f; // maximum number of cells to traverse in one step
+
+  float dt;
+  float max_velocity = sqrtf(sq(maxabs_u(g_u)) + sq(maxabs_v(g_v)));
+  if (max_velocity < (m*k_s / frame_time)) {
+    dt = frame_time;
+  } else {
+    dt = std::max(m*k_s / max_velocity, minimum_step);
+  }
+  return dt;
+}
 
 void sim_step() {
-  if (g_pause) {
+  if (g_pause && g_simulate_steps == 0) {
     return;
   }
 
-  float dt = 1.f/8;
-  advect_markers(dt);
-  refresh_marker_counts();
+  const float total_frame_time = 0.1f;
+  const float minimum_step = total_frame_time / 8;
+  float frame_time = total_frame_time;
+  do {
+    float dt = calculate_timestep(frame_time, minimum_step);
+    frame_time -= dt;
 
-  advectu(g_u, g_v, dt, g_u, g_utmp);
-  advectv(g_u, g_v, dt, g_v, g_vtmp);
-  apply_body_forces(g_vtmp, dt);
-  project(dt, g_utmp, g_vtmp, g_u, g_v);
+    advect_markers(dt);
+    refresh_marker_counts();
+    extrapolate_velocity_field();
+    zero_horizontal_velocity_bounds(g_utmp);
+    zero_vertical_velocity_bounds(g_vtmp);
+
+    advectu(g_u, g_v, dt, g_utmp);
+    advectv(g_u, g_v, dt, g_vtmp);
+    apply_body_forces(g_vtmp, dt);
+
+    zero_horizontal_velocity_bounds(g_utmp);
+    zero_vertical_velocity_bounds(g_vtmp);
+
+    project(dt, g_utmp, g_vtmp, g_u, g_v);
+  } while (frame_time > 0.f);
+
+  if (g_simulate_steps) {
+    g_simulate_steps--;
+  }
 }
 
 void draw_rows(struct buffer* buf) {
@@ -390,6 +944,8 @@ void process_keypress() {
   
   if (c == 'p') {
     g_pause = !g_pause;
+  } else if (c == 'f') {
+    g_simulate_steps++;
   } else if (c == 'q') {
     u_clear_screen();
     exit(0);
