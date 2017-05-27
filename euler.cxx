@@ -522,7 +522,6 @@ void advect_markers(float dt) {
   for (size_t i = 0; i < N; ++i) {
     vec2f p = g_markers[i];
     vec2f v = velocity_at(p);
-    fprintf(stderr, "m[%2lu] | p: %f,%f    v: %f,%f\n", i, p.x(), p.y(), v.x(), v.y());
     if (v.x() == 0.f && v.y() == 0.f) {
       continue;
     }
