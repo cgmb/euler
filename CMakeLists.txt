@@ -20,7 +20,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 set(SOURCES
- euler.cxx
+ main.cxx
  misc/terminal.cxx
 )
 
