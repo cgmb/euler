@@ -52,16 +52,6 @@ float clampf(float min, float x, float max) {
   }
 }
 
-int clampi(int min, int value, int max) {
-  if (value < min) {
-    return min;
-  } else if (value > max) {
-    return max;
-  } else {
-    return value;
-  }
-}
-
 void refresh_marker_counts() {
   memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
   memset(g_marker_count, '\0', sizeof(g_marker_count));
@@ -161,27 +151,6 @@ void sim_init() {
   refresh_marker_counts();
 }
 
-/*
-float interpolate(float q[Y][X], float x, float y) {
-  x = clampf(0, x, X-1);
-  y = clampf(0, y, Y-1);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floord = (int)x_floor;
-  int x_ceild = std::min(x_floord+1, int(X)-1);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floord = (int)y_floor;
-  int y_ceild = std::min(y_floord+1, int(Y)-1);
-
-  float y1_mid = (1-y_frac)*q[y_floord][x_floord] + y_frac*q[y_ceild][x_floord];
-  float y2_mid = (1-y_frac)*q[y_floord][x_ceild] + y_frac*q[y_ceild][x_ceild];
-  return (1-x_frac)*y1_mid + x_frac*y2_mid;
-}
-*/
-
 void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
@@ -274,25 +243,6 @@ void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
     }
   }
 }
-
-/*
-void advectv(float u[Y][X], float v[Y][X], float dt,
-  float q[Y][X], float out[Y][X]) {
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      float a = y > 0 ? u[y-1][x] : 0;
-      float b = u[y][x];
-      float c = y > 0 && x+1 < X ? u[y-1][x+1] : 0;
-      float d = x+1 < X ? u[y][x+1] : 0;
-      float dx = (a + b + c + d) / 4;
-      float dy = v[y][x];
-      float prev_x = x - dx*dt*k_invs;
-      float prev_y = y - dy*dt*k_invs;
-      out[y][x] = interpolate(q, prev_x, prev_y);
-    }
-  }
-}
-*/
 
 void advectv(float u[Y][X], float v[Y][X], float dt,
   float out[Y][X]) {
@@ -567,7 +517,9 @@ void apply_body_forces(float v[Y][X], float dt) {
   }
 }
 
-int8_t nonsolid_neighbor_count(size_t y, size_t x) { // todo: X,Y bounds
+int8_t nonsolid_neighbor_count(size_t y, size_t x) {
+  // this function is only used on fluid cells, and the edge cells
+  // should never be fluid, so no bounds checks required
   return 4 - g_solid[y][x-1] - g_solid[y][x+1]
            - g_solid[y-1][x] - g_solid[y+1][x];
 }
@@ -734,7 +686,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       }
     }
   }
-  
+
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -940,7 +892,7 @@ void process_keypress() {
   if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
     die("read");
   }
-  
+
   if (c == 'p') {
     g_pause = !g_pause;
   } else if (c == 'f') {
