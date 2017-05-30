@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(euler)
 option(OPTIMIZE "Enable platform-specific optimizations")
+set(SANITIZER "" CACHE STRING "Enable specified sanitizer")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 include_directories(.)
 
@@ -13,6 +14,10 @@ endif()
 
 if(${OPTIMIZE})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native -ffast-math")
+endif()
+
+if(NOT ${SANITIZER} STREQUAL "")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=${SANITIZER} -fno-omit-frame-pointer")
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
