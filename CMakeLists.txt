@@ -27,6 +27,7 @@ endif()
 set(SOURCES
  main.cxx
  misc/terminal.cxx
+ misc/file.cxx
 )
 
 add_executable(euler ${SOURCES})

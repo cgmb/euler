@@ -10,9 +10,14 @@
 
 #include "math/vec2f.h"
 #include "misc/terminal.h"
+#include "misc/file.h"
 
-const size_t X = 20;
-const size_t Y = 20;
+const size_t X = 100;
+const size_t Y = 40;
+
+struct args_t {
+  const char* scenario_file;
+};
 
 const float k_s = 1; // side length
 const float k_invs = 1/k_s;
@@ -35,7 +40,8 @@ struct sparse_entry_t {
   int8_t a_plus_j;
 } g_a[Y][X];
 
-const size_t N = 8*8*4;
+const size_t N = 4*Y*X;
+size_t g_markers_length;
 vec2f g_markers[N];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
@@ -55,7 +61,7 @@ float clampf(float min, float x, float max) {
 void refresh_marker_counts() {
   memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
   memset(g_marker_count, '\0', sizeof(g_marker_count));
-  for (size_t i = 0; i < N; ++i) {
+  for (size_t i = 0; i < g_markers_length; ++i) {
     int x = (int)floorf(g_markers[i].x()*k_invs);
     int y = (int)floorf(g_markers[i].y()*k_invs);
     g_marker_count[y][x]++;
@@ -122,15 +128,30 @@ void extrapolate_velocity_field() {
   }
 }
 
-void sim_init() {
-  // setup walls
-  for (size_t i = 0; i < X; ++i) {
-    g_solid[0][i] = true;
+void sim_init(args_t in) {
+  int length;
+  char* contents = load_file(in.scenario_file, &length);
+  if (!contents) {
+    fprintf(stderr, "Could not load %s!\n", in.scenario_file);
+    exit(1);
   }
-  for (size_t i = 0; i < Y; ++i) {
-    g_solid[i][0] = true;
-    g_solid[i][X-1] = true;
+
+  // parse the scenario file to init our fluid
+  int i = 0;
+  bool fluid[Y][X] = {};
+  for (size_t y = Y-2; y > 0 && i < length; --y) {
+    for (size_t x = 1; x < X-1 && i < length; ++x) {
+      char c = contents[i++];
+      if (c == '\n') {
+        break;
+      } else if (c == 'X') {
+        g_solid[y][x] = true;
+      } else if (c == '0') {
+        fluid[y][x] = true;
+      }
+    }
   }
+  release_file(contents);
 
   std::mt19937 rng_engine(123456789u);
   std::uniform_real_distribution<float> distribution(0.f, 0.5f);
@@ -138,16 +159,18 @@ void sim_init() {
 
   // setup fluid markers, 4 per cell, jittered
   size_t idx = 0;
-  for (size_t i = 1; i < 9; ++i) {
-    for (size_t j = 11; j < 19; ++j) {
-      for (size_t k = 0; k < 4; ++k) {
-        float x = i + (k < 2 ? 0 : 0.5f) + rng();
-        float y = j + (k % 2 ? 0 : 0.5f) + rng();
-        assert(idx < N);
-        g_markers[idx++] = k_s*vec2f{x,y};
+  for (size_t i = 0; i < X; ++i) {
+    for (size_t j = 0; j < Y; ++j) {
+      if (fluid[j][i]) {
+        for (size_t k = 0; k < 4; ++k) {
+          float x = i + (k < 2 ? 0 : 0.5f) + rng();
+          float y = j + (k % 2 ? 0 : 0.5f) + rng();
+          g_markers[idx++] = k_s*vec2f{x,y};
+        }
       }
     }
   }
+  g_markers_length = idx;
   refresh_marker_counts();
 }
 
@@ -469,7 +492,7 @@ vec2f velocity_at(vec2f pos) {
 // digital differential analyzer collisions
 // https://en.wikipedia.org/wiki/Digital_differential_analyzer_(graphics_algorithm)
 void advect_markers(float dt) {
-  for (size_t i = 0; i < N; ++i) {
+  for (size_t i = 0; i < g_markers_length; ++i) {
     vec2f p = g_markers[i];
     vec2f v = velocity_at(p);
     if (v.x() == 0.f && v.y() == 0.f) {
@@ -903,13 +926,23 @@ void process_keypress() {
   }
 }
 
+args_t parse_args(int argc, char** argv) {
+  args_t in;
+  if (argc < 2) {
+    fprintf(stderr, "usage: %s <scenario>\n", argv[0]);
+    exit(1);
+  }
+  in.scenario_file = argv[1];
+  return in;
+}
+
 int main(int argc, char** argv) {
-  (void)argc; (void)argv;
+  args_t in = parse_args(argc, argv);
 
   enable_raw_mode();
   buffer buf = { 0, 0 };
 
-  sim_init();
+  sim_init(in);
 
   while (1) {
     refresh_screen(&buf);
