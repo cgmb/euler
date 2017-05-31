@@ -882,16 +882,38 @@ void sim_step() {
   }
 }
 
+// terminal color codes
+#define T_RED     "\x1B[31m"
+#define T_GREEN   "\x1B[32m"
+#define T_YELLOW  "\x1B[33m"
+#define T_BLUE    "\x1B[34m"
+#define T_MAGENTA "\x1B[35m"
+#define T_CYAN    "\x1B[36m"
+#define T_WHITE   "\x1B[37m"
+#define T_RESET   "\x1B[0m"
+
 void draw_rows(struct buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol = 3;
   for (int y = Y; y-- > 0;) {
+    bool prev_water = false;
     for (size_t x = 0; x < X; x++) {
       if (g_solid[y][x]) {
+        if (prev_water) {
+          buffer_append(buf, T_RESET, 4);
+        }
         buffer_append(buf, "X", 1);
+        prev_water = false;
       } else {
         uint8_t i = std::min(g_marker_count[y][x], max_symbol);
+        bool has_water = i > 0;
+        if (!prev_water && has_water) {
+          buffer_append(buf, T_BLUE, 5);
+        } else if (prev_water && !has_water) {
+          buffer_append(buf, T_RESET, 4);
+        }
         buffer_append(buf, symbol[i], 1);
+        prev_water = has_water;
       }
     }
     if (y > 0) {
