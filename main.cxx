@@ -754,6 +754,18 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     }
   }
 
+  // clamp pressure to zero
+  // negative pressures are not physically possible and this prevents some weird artifacts
+  // this step is not mentioned in Bridson's notes, though, so perhaps there's a way to avoid it
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x) && p[y][x] < 0.f) {
+        p[y][x] = 0.f;
+      }
+    }
+  }
+
+  // update horizontal velocities
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       if (g_solid[y][x] || g_solid[y][x+1]) { // todo: unnecessary? probably same as !is_water
@@ -766,6 +778,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     }
   }
 
+  // update vertical velocities
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (g_solid[y][x] || g_solid[y+1][x]) {
