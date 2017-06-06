@@ -658,7 +658,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // update horizontal velocities
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
-      if (g_solid[y][x] || g_solid[y][x+1]) { // todo: unnecessary? probably same as !is_water
+      if (g_solid[y][x] || g_solid[y][x+1]) {
         uout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y,x+1)) {
         uout[y][x] = u[y][x] - k_invd * k_invs * dt * (p[y][x+1] - p[y][x]);
