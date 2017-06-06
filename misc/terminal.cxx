@@ -1,8 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 #include "terminal.h"
 
@@ -86,4 +88,23 @@ void buffer_clear(buffer* buf) {
 
 void buffer_free(buffer* buf) {
   free(buf->data);
+}
+
+int get_window_size(int* rows, int* cols) {
+  struct winsize ws;
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1) {
+    return -1;
+  } else {
+    *cols = ws.ws_col;
+    *rows = ws.ws_row;
+    return 0;
+  }
+}
+
+int set_window_size_handler(wshandler_t fn) {
+  struct sigaction sa;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sa.sa_handler = fn;
+  return sigaction(SIGWINCH, &sa, 0);
 }

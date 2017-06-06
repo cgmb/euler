@@ -12,8 +12,13 @@
 #include "misc/terminal.h"
 #include "misc/file.h"
 
+// simulation size
 const size_t X = 100;
 const size_t Y = 40;
+
+// display size
+int g_wx;
+int g_wy;
 
 struct args_t {
   const char* scenario_file;
@@ -798,9 +803,10 @@ void sim_step() {
 void draw_rows(struct buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol = 3;
-  for (int y = Y; y-- > 0;) {
+  const int y_cutoff = std::max((int)Y - g_wy, 0);
+  for (int y = Y; y-- > y_cutoff;) {
     bool prev_water = false;
-    for (size_t x = 0; x < X; x++) {
+    for (size_t x = 0; x < X && x < g_wx; x++) {
       if (g_solid[y][x]) {
         if (prev_water) {
           buffer_append(buf, T_RESET, 4);
@@ -819,7 +825,8 @@ void draw_rows(struct buffer* buf) {
         prev_water = has_water;
       }
     }
-    if (y > 0) {
+    buffer_append(buf, T_RESET, 4);
+    if (y > y_cutoff) {
       buffer_append(buf, "\r\n", 2);
     }
   }
@@ -837,7 +844,7 @@ void refresh_screen(buffer* buf) {
 
 void process_keypress() {
   char c = '\0';
-  if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
+  if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN && errno != EINTR) {
     die("read");
   }
 
@@ -861,8 +868,22 @@ args_t parse_args(int argc, char** argv) {
   return in;
 }
 
+void update_window_size() {
+  if (get_window_size(&g_wy, &g_wx) == -1) {
+    die("get_window_size");
+  }
+}
+
+void handle_window_size_changed(int signal) {
+  (void)signal;
+  update_window_size();
+}
+
 int main(int argc, char** argv) {
   args_t in = parse_args(argc, argv);
+
+  update_window_size();
+  set_window_size_handler(&handle_window_size_changed);
 
   enable_raw_mode();
   buffer buf = { 0, 0 };

@@ -21,4 +21,8 @@ void show_cursor(buffer* buf);
 void enable_raw_mode();
 void disable_raw_mode();
 
+typedef void(*wshandler_t)(int);
+int get_window_size(int* rows, int* cols);
+int set_window_size_handler(wshandler_t fn);
+
 #endif
