@@ -594,7 +594,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
         float vp = y>0 ? v[y-1][x] : 0;
         d0[y][x] = c * k_invs * (u[y][x] - up + v[y][x] - vp);
       } else {
-        // not really neccessary, but prevents uninitialized reads with memcpy
+        // not really necessary, but prevents uninitialized reads with memcpy
         d0[y][x] = 0.f;
       }
     }
@@ -618,7 +618,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   double r[Y][X];      // residual
   memcpy(r, d0, sizeof(r));
   if (!all_zero(r)) {
-    double z[Y][X];      // auxilliary vector
+    double z[Y][X];      // auxiliary vector
     apply_preconditioner(r, z);
     double s[Y][X];      // search vector
     memcpy(s, z, sizeof(s));
@@ -715,7 +715,7 @@ float maxabs_v(float q[Y][X]) {
 void zero_horizontal_velocity_bounds(float u[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
-      // not really neccessary to zero air cells, but makes debugging easier
+      // not really necessary to zero air cells, but makes debugging easier
       bool is_air = !is_water(y,x) && !is_water(y,x+1);
       if (is_air || g_solid[y][x] || g_solid[y][x+1]) {
         u[y][x] = 0.f;
@@ -727,7 +727,7 @@ void zero_horizontal_velocity_bounds(float u[Y][X]) {
 void zero_vertical_velocity_bounds(float v[Y][X]) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      // not really neccessary to zero air cells, but makes debugging easier
+      // not really necessary to zero air cells, but makes debugging easier
       bool is_air = !is_water(y,x) && !is_water(y+1,x);
       if (is_air || g_solid[y][x] || g_solid[y+1][x]) {
         v[y][x] = 0.f;
@@ -737,7 +737,7 @@ void zero_vertical_velocity_bounds(float v[Y][X]) {
 }
 
 float calculate_timestep(float frame_time, float minimum_step) {
-  // Brison suggests a limit of five for stability, but my implementaiton of
+  // Bridson suggests a limit of five for stability, but my implementation of
   // advection and extrapolation assume that new fluid cells are within one
   // grid cell of old fluid cells
   const float m = 0.75f; // maximum number of cells to traverse in one step
