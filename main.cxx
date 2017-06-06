@@ -174,193 +174,6 @@ void sim_init(args_t in) {
   refresh_marker_counts();
 }
 
-void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X-1; ++x) {
-      if (is_water(y,x) || is_water(y,x+1)) {
-        float dx = u[y][x];
-        // we could check if either of the two squares around each
-        // vertical component is water, but that would mean checking
-        // four squares instead of two, and doing bounds checks.
-        // Let's just consider two because I'm not sure that allowing
-        // fluid to interact diagonally like that actually helps.
-        float div = 0.f;
-        float vv[4] = {};
-        if (is_water(y,x)) {
-          vv[0] = v[y][x];
-          div += 1.f;
-          if (y > 0) {
-            vv[1] = v[y-1][x];
-            div += 1.f;
-          }
-        }
-        if (is_water(y,x+1)) {
-          vv[2] = v[y][x+1];
-          div += 1.f;
-          if (y > 0) {
-            vv[3] = v[y-1][x+1];
-            div += 1.f;
-          }
-        }
-        float dy = (vv[0] + vv[1] + vv[2] + vv[3]) / div;
-        float prev_x = x - dx*dt*k_invs;
-        float prev_y = y - dy*dt*k_invs;
-
-
-        // bilinear interpolation
-        prev_x = clampf(0, prev_x, X-2);
-        prev_y = clampf(0, prev_y, Y-1);
-
-        float x_floor;
-        float x_frac = modff(prev_x, &x_floor);
-        int x_floori = (int)x_floor;
-        int x_ceili = std::min(x_floori+1, int(X)-2);
-
-        float y_floor;
-        float y_frac = modff(prev_y, &y_floor);
-        int y_floori = (int)y_floor;
-        int y_ceili = std::min(y_floori+1, int(Y)-1);
-
-        // bilinearly interpolate between the 4 surrounding points, excluding
-        // any points that do not have water
-        bool w[2][2];
-        w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori,x_floori+1);
-        w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori,x_ceili+1);
-        w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili,x_floori+1);
-        w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili,x_ceili+1);
-
-        assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
-
-        // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
-        // are out of water, but the x interpolation will take care of that.
-        float y1_frac;
-        if (!w[0][0]) {
-          y1_frac = 1.f;
-        } else if (!w[1][0]) {
-          y1_frac = 0.f;
-        } else {
-          y1_frac = y_frac;
-        }
-        float y1_mid = (1-y1_frac)*u[y_floori][x_floori] + y1_frac*u[y_ceili][x_floori];
-
-        float y2_frac;
-        if (!w[0][1]) {
-          y2_frac = 1.f;
-        } else if (!w[1][1]) {
-          y2_frac = 0.f;
-        } else {
-          y2_frac = y_frac;
-        }
-        float y2_mid = (1-y2_frac)*u[y_floori][x_ceili] + y2_frac*u[y_ceili][x_ceili];
-
-        float x0_frac;
-        if (!w[0][0] && !w[1][0]) {
-          x0_frac = 1.f;
-        } else if (!w[0][1] && !w[1][1]) {
-          x0_frac = 0.f;
-        } else {
-          x0_frac = x_frac;
-        }
-        out[y][x] = (1-x0_frac)*y1_mid + x0_frac*y2_mid;
-      }
-    }
-  }
-}
-
-void advectv(float u[Y][X], float v[Y][X], float dt,
-  float out[Y][X]) {
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      if (is_water(y,x) || is_water(y+1,x)) {
-        float dy = v[y][x];
-        // we could check if either of the two squares around each
-        // horizontal component is water, but that would mean checking
-        // four squares instead of two, and doing bounds checks.
-        // Let's just consider two because I'm not sure that allowing
-        // fluid to interact diagonally like that actually helps.
-        float div = 0.f;
-        float uu[4] = {};
-        if (is_water(y,x)) {
-          uu[0] = u[y][x];
-          div += 1.f;
-          if (x > 0) {
-            uu[1] = u[y][x-1];
-            div += 1.f;
-          }
-        }
-        if (is_water(y+1,x)) {
-          uu[2] = u[y+1][x];
-          div += 1.f;
-          if (x > 0) {
-            uu[3] = u[y+1][x-1];
-            div += 1.f;
-          }
-        }
-        float dx = (uu[0] + uu[1] + uu[2] + uu[3]) / div;
-        float prev_x = x - dx*dt*k_invs;
-        float prev_y = y - dy*dt*k_invs;
-
-
-        // bilinear interpolation
-        prev_x = clampf(0, prev_x, X-1);
-        prev_y = clampf(0, prev_y, Y-2);
-
-        float x_floor;
-        float x_frac = modff(prev_x, &x_floor);
-        int x_floori = (int)x_floor;
-        int x_ceili = std::min(x_floori+1, int(X)-1);
-
-        float y_floor;
-        float y_frac = modff(prev_y, &y_floor);
-        int y_floori = (int)y_floor;
-        int y_ceili = std::min(y_floori+1, int(Y)-2);
-
-        // bilinearly interpolate between the 4 surrounding points, excluding
-        // any points that do not have water
-        bool w[2][2];
-        w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori+1,x_floori);
-        w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori+1,x_ceili);
-        w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili+1,x_floori);
-        w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili+1,x_ceili);
-
-        assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
-
-        // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
-        // are out of water, but the x interpolation will take care of that.
-        float y1_frac;
-        if (!w[0][0]) {
-          y1_frac = 1.f;
-        } else if (!w[1][0]) {
-          y1_frac = 0.f;
-        } else {
-          y1_frac = y_frac;
-        }
-        float y1_mid = (1-y1_frac)*v[y_floori][x_floori] + y1_frac*v[y_ceili][x_floori];
-
-        float y2_frac;
-        if (!w[0][1]) {
-          y2_frac = 1.f;
-        } else if (!w[1][1]) {
-          y2_frac = 0.f;
-        } else {
-          y2_frac = y_frac;
-        }
-        float y2_mid = (1-y2_frac)*v[y_floori][x_ceili] + y2_frac*v[y_ceili][x_ceili];
-
-        float x0_frac;
-        if (!w[0][0] && !w[1][0]) {
-          x0_frac = 1.f;
-        } else if (!w[0][1] && !w[1][1]) {
-          x0_frac = 0.f;
-        } else {
-          x0_frac = x_frac;
-        }
-        out[y][x] = (1-x0_frac)*y1_mid + x0_frac*y2_mid;
-      }
-    }
-  }
-}
-
 float interpolate_u(float u[Y][X], float y, float x) {
   // bilinear interpolation
   x = clampf(0, x, X-2);
@@ -475,6 +288,83 @@ float interpolate_v(float v[Y][X], float y, float x) {
     x0_frac = x_frac;
   }
   return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
+}
+
+void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X-1; ++x) {
+      if (is_water(y,x) || is_water(y,x+1)) {
+        float dx = u[y][x];
+        // we could check if either of the two squares around each
+        // vertical component is water, but that would mean checking
+        // four squares instead of two, and doing bounds checks.
+        // Let's just consider two because I'm not sure that allowing
+        // fluid to interact diagonally like that actually helps.
+        float div = 0.f;
+        float vv[4] = {};
+        if (is_water(y,x)) {
+          vv[0] = v[y][x];
+          div += 1.f;
+          if (y > 0) {
+            vv[1] = v[y-1][x];
+            div += 1.f;
+          }
+        }
+        if (is_water(y,x+1)) {
+          vv[2] = v[y][x+1];
+          div += 1.f;
+          if (y > 0) {
+            vv[3] = v[y-1][x+1];
+            div += 1.f;
+          }
+        }
+        float dy = (vv[0] + vv[1] + vv[2] + vv[3]) / div;
+        float prev_x = x - dx*dt*k_invs;
+        float prev_y = y - dy*dt*k_invs;
+
+        out[y][x] = interpolate_u(g_u, prev_y, prev_x);
+      }
+    }
+  }
+}
+
+void advectv(float u[Y][X], float v[Y][X], float dt,
+  float out[Y][X]) {
+  for (size_t y = 0; y < Y-1; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x) || is_water(y+1,x)) {
+        float dy = v[y][x];
+        // we could check if either of the two squares around each
+        // horizontal component is water, but that would mean checking
+        // four squares instead of two, and doing bounds checks.
+        // Let's just consider two because I'm not sure that allowing
+        // fluid to interact diagonally like that actually helps.
+        float div = 0.f;
+        float uu[4] = {};
+        if (is_water(y,x)) {
+          uu[0] = u[y][x];
+          div += 1.f;
+          if (x > 0) {
+            uu[1] = u[y][x-1];
+            div += 1.f;
+          }
+        }
+        if (is_water(y+1,x)) {
+          uu[2] = u[y+1][x];
+          div += 1.f;
+          if (x > 0) {
+            uu[3] = u[y+1][x-1];
+            div += 1.f;
+          }
+        }
+        float dx = (uu[0] + uu[1] + uu[2] + uu[3]) / div;
+        float prev_x = x - dx*dt*k_invs;
+        float prev_y = y - dy*dt*k_invs;
+
+        out[y][x] = interpolate_v(g_v, prev_y, prev_x);
+      }
+    }
+  }
 }
 
 vec2f velocity_at(vec2f pos) {
