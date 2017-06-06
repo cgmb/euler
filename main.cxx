@@ -51,6 +51,9 @@ vec2f g_markers[N];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
 
+bool g_source[Y][X];
+bool g_sink[Y][X];
+
 const float k_g = -10.f;
 
 float clampf(float min, float x, float max) {
@@ -69,7 +72,16 @@ void refresh_marker_counts() {
   for (size_t i = 0; i < g_markers_length; ++i) {
     int x = (int)floorf(g_markers[i].x()*k_invs);
     int y = (int)floorf(g_markers[i].y()*k_invs);
-    g_marker_count[y][x]++;
+    bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
+    if (in_bounds) {
+      if (g_sink[y][x]) {
+        g_markers[i--] = g_markers[--g_markers_length];
+      } else {
+        g_marker_count[y][x]++;
+      }
+    } else {
+      g_markers[i--] = g_markers[--g_markers_length];
+    }
   }
 }
 
@@ -133,6 +145,11 @@ void extrapolate_velocity_field() {
   }
 }
 
+
+std::mt19937 g_rng_engine(123456789u);
+std::uniform_real_distribution<float> g_distribution(0.f, 1.0f);
+auto g_rng = [&](){ return g_distribution(g_rng_engine); };
+
 void sim_init(args_t in) {
   int length;
   char* contents = load_file(in.scenario_file, &length);
@@ -153,14 +170,18 @@ void sim_init(args_t in) {
         g_solid[y][x] = true;
       } else if (c == '0') {
         fluid[y][x] = true;
+      } else if (c == '?') {
+        fluid[y][x] = true;
+        g_source[y][x] = true;
+      } else if (c == '=') {
+        g_sink[y][x] = true;
       }
     }
   }
   release_file(contents);
 
-  std::mt19937 rng_engine(123456789u);
-  std::uniform_real_distribution<float> distribution(0.f, 0.5f);
-  auto rng = [&](){ return distribution(rng_engine); };
+  std::uniform_real_distribution<float> half_distribution(0.f, 0.5f);
+  auto rng = [&](){ return half_distribution(g_rng_engine); };
 
   // setup fluid markers, 4 per cell, jittered
   size_t idx = 0;
@@ -177,6 +198,17 @@ void sim_init(args_t in) {
   }
   g_markers_length = idx;
   refresh_marker_counts();
+}
+
+void update_fluid_sources() {
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      while (g_markers_length < N-1 && g_source[y][x] && g_marker_count[y][x] < 3) {
+        g_markers[g_markers_length++] = k_s*vec2f{x+g_rng(), y+g_rng()};
+        g_marker_count[y][x]++;
+      }
+    }
+  }
 }
 
 float interpolate_u(float u[Y][X], float y, float x) {
@@ -771,6 +803,7 @@ void sim_step() {
 
     advect_markers(dt);
     refresh_marker_counts();
+    update_fluid_sources();
     extrapolate_velocity_field();
     zero_horizontal_velocity_bounds(g_utmp);
     zero_vertical_velocity_bounds(g_vtmp);
@@ -813,6 +846,11 @@ void draw_rows(struct buffer* buf) {
         }
         buffer_append(buf, "X", 1);
         prev_water = false;
+      } else if (g_sink[y][x]) {
+        if (prev_water) {
+          buffer_append(buf, T_RESET, 4);
+        }
+        buffer_append(buf, "=", 1);
       } else {
         uint8_t i = std::min(g_marker_count[y][x], max_symbol);
         bool has_water = i > 0;
