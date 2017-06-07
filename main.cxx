@@ -35,6 +35,8 @@ float g_utmp[Y][X]; // [Y][X-1]
 float g_vtmp[Y][X]; // [Y-1][X]
 
 bool g_solid[Y][X];
+bool g_source[Y][X];
+bool g_sink[Y][X];
 
 bool g_pause;
 unsigned g_simulate_steps;
@@ -50,9 +52,6 @@ size_t g_markers_length;
 vec2f g_markers[N];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
-
-bool g_source[Y][X];
-bool g_sink[Y][X];
 
 const float k_g = -10.f;
 
