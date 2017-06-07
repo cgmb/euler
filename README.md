@@ -1,6 +1,6 @@
 ## Ubuntu Dependencies
 
-    sudo apt install freeglut3-dev libglfw3-dev pkg-config cmake build-essential ninja-build
+    sudo apt install cmake build-essential ninja-build
 
 ## How to Build
 
