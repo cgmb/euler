@@ -160,8 +160,8 @@ void sim_init(args_t in) {
   // parse the scenario file to init our fluid
   int i = 0;
   bool fluid[Y][X] = {};
-  for (size_t y = Y-2; y > 0 && i < length; --y) {
-    for (size_t x = 1; x < X-1 && i < length; ++x) {
+  for (size_t y = Y-1; y > 0 && i < length; --y) {
+    for (size_t x = 0; x < X && i < length; ++x) {
       char c = contents[i++];
       if (c == '\n') {
         break;
