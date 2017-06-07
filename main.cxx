@@ -839,7 +839,7 @@ void draw_rows(struct buffer* buf) {
   const int y_cutoff = std::max((int)Y - g_wy, 0);
   for (int y = Y; y-- > y_cutoff;) {
     bool prev_water = false;
-    for (size_t x = 0; x < X && x < g_wx; x++) {
+    for (int x = 0; x < (int)X && x < g_wx; x++) {
       if (g_solid[y][x]) {
         if (prev_water) {
           buffer_append(buf, T_RESET, 4);
