@@ -804,8 +804,8 @@ void sim_step() {
     refresh_marker_counts();
     update_fluid_sources();
     extrapolate_velocity_field();
-    zero_horizontal_velocity_bounds(g_utmp);
-    zero_vertical_velocity_bounds(g_vtmp);
+    zero_horizontal_velocity_bounds(g_u);
+    zero_vertical_velocity_bounds(g_v);
 
     advectu(g_u, g_v, dt, g_utmp);
     advectv(g_u, g_v, dt, g_vtmp);
