@@ -22,6 +22,7 @@ int g_wy;
 
 struct args_t {
   const char* scenario_file;
+  bool rainbow;
 };
 
 const float k_s = 1; // side length
@@ -38,8 +39,38 @@ bool g_solid[Y][X];
 bool g_source[Y][X];
 bool g_sink[Y][X];
 
+float hsv_basis(float t) {
+  // periodic function, repeats after t=[0,6]
+  // returns value in range of [0,1]
+  t -= 6.f*floorf(1.f/6*t);
+  if (t < 0.f) {
+    t += 6.f;
+  }
+
+  if (t < 1.f) {
+    return t;
+  } else if (t < 3.f) {
+    return 1.f;
+  } else if (t < 4.f) {
+    return 4.f - t;
+  } else {
+    return 0.f;
+  }
+}
+
+bool g_rainbow;
+float g_r[Y][X];
+float g_g[Y][X];
+float g_b[Y][X];
+float g_rtmp[Y][X];
+float g_gtmp[Y][X];
+float g_btmp[Y][X];
+const float k_source_color_period = 10.f; // seconds
+const float k_initial_color_period = 60.f; // grid cells
+
 bool g_pause;
 unsigned g_simulate_steps;
+size_t g_frame_count;
 
 struct sparse_entry_t {
   int8_t a_diag;
@@ -144,6 +175,31 @@ void extrapolate_velocity_field() {
   }
 }
 
+void extrapolate_p(float q[Y][X]) {
+  // extrapolate a quantity sampled in the pressure cell
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (!was_water(y,x) && is_water(y,x)) {
+        size_t y_lower = y>0 ? y-1 : 0;
+        size_t x_lower = x>0 ? x-1 : 0;
+        size_t y_upper = y<Y-1 ? y+1 : y;
+        size_t x_upper = x<X-1 ? x+1 : x;
+        float total = 0.f;
+        size_t count = 0;
+        for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
+          for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
+            if (was_water(y_u,x_u)) {
+              total += q[y_u][x_u];
+              count++;
+            }
+          }
+        }
+        assert(count > 0);
+        q[y][x] = total / count;
+      }
+    }
+  }
+}
 
 std::mt19937 g_rng_engine(123456789u);
 std::uniform_real_distribution<float> g_distribution(0.f, 1.0f);
@@ -179,6 +235,21 @@ void sim_init(args_t in) {
   }
   release_file(contents);
 
+  // setup color
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (fluid[y][x]) {
+        float t = 0.f;
+        if (!g_source[y][x]) {
+          t = (x + y) * 6.f / k_initial_color_period;
+        }
+        g_r[y][x] = hsv_basis(t + 2.f);
+        g_g[y][x] = hsv_basis(t);
+        g_b[y][x] = hsv_basis(t - 2.f);
+      }
+    }
+  }
+
   std::uniform_real_distribution<float> half_distribution(0.f, 0.5f);
   auto rng = [&](){ return half_distribution(g_rng_engine); };
 
@@ -200,11 +271,17 @@ void sim_init(args_t in) {
 }
 
 void update_fluid_sources() {
+  float t = 0.6f / k_source_color_period * g_frame_count;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      while (g_markers_length < N-1 && g_source[y][x] && g_marker_count[y][x] < 3) {
-        g_markers[g_markers_length++] = k_s*vec2f{x+g_rng(), y+g_rng()};
-        g_marker_count[y][x]++;
+      if (g_source[y][x]) {
+        while (g_markers_length < N-1 && g_marker_count[y][x] < 3) {
+          g_markers[g_markers_length++] = k_s*vec2f{x+g_rng(), y+g_rng()};
+          g_marker_count[y][x]++;
+        }
+        g_r[y][x] = hsv_basis(t + 2.f);
+        g_g[y][x] = hsv_basis(t);
+        g_b[y][x] = hsv_basis(t - 2.f);
       }
     }
   }
@@ -326,6 +403,64 @@ float interpolate_v(float v[Y][X], float y, float x) {
   return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
 }
 
+float interpolate_p(float q[Y][X], float y, float x) {
+  // bilinear interpolation
+  x = clampf(0, x, X-1);
+  y = clampf(0, y, Y-1);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floori = (int)x_floor;
+  int x_ceili = std::min(x_floori+1, int(X)-1);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floori = (int)y_floor;
+  int y_ceili = std::min(y_floori+1, int(Y)-1);
+
+  // bilinearly interpolate between the 4 surrounding points, excluding
+  // any points that do not have water
+  bool w[2][2];
+  w[0][0] = is_water(y_floori,x_floori);
+  w[0][1] = is_water(y_floori,x_ceili);
+  w[1][0] = is_water(y_ceili,x_floori);
+  w[1][1] = is_water(y_ceili,x_ceili);
+
+  assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
+
+  // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
+  // are out of water, but the x interpolation will take care of that.
+  float y1_frac;
+  if (!w[0][0]) {
+    y1_frac = 1.f;
+  } else if (!w[1][0]) {
+    y1_frac = 0.f;
+  } else {
+    y1_frac = y_frac;
+  }
+  float y1_mid = (1-y1_frac)*q[y_floori][x_floori] + y1_frac*q[y_ceili][x_floori];
+
+  float y2_frac;
+  if (!w[0][1]) {
+    y2_frac = 1.f;
+  } else if (!w[1][1]) {
+    y2_frac = 0.f;
+  } else {
+    y2_frac = y_frac;
+  }
+  float y2_mid = (1-y2_frac)*q[y_floori][x_ceili] + y2_frac*q[y_ceili][x_ceili];
+
+  float x0_frac;
+  if (!w[0][0] && !w[1][0]) {
+    x0_frac = 1.f;
+  } else if (!w[0][1] && !w[1][1]) {
+    x0_frac = 0.f;
+  } else {
+    x0_frac = x_frac;
+  }
+  return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
+}
+
 void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
@@ -398,6 +533,23 @@ void advectv(float u[Y][X], float v[Y][X], float dt,
         float prev_y = y - dy*dt*k_invs;
 
         out[y][x] = interpolate_v(g_v, prev_y, prev_x);
+      }
+    }
+  }
+}
+
+void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x)) {
+        // let's assume we're never advecting something on the grid boundary,
+        // as my pressure solve doesn't check those bounds either
+        float dy = (v[y][x] + v[y-1][x]) / 2;
+        float dx = (u[y][x] + u[y][x-1]) / 2;
+        float prev_x = x - dx*dt*k_invs;
+        float prev_y = y - dy*dt*k_invs;
+
+        out[y][x] = interpolate_p(q, prev_y, prev_x);
       }
     }
   }
@@ -802,6 +954,11 @@ void sim_step() {
 
     advect_markers(dt);
     refresh_marker_counts();
+    if (g_rainbow) {
+      extrapolate_p(g_r);
+      extrapolate_p(g_g);
+      extrapolate_p(g_b);
+    }
     update_fluid_sources();
     extrapolate_velocity_field();
     zero_horizontal_velocity_bounds(g_u);
@@ -809,6 +966,14 @@ void sim_step() {
 
     advectu(g_u, g_v, dt, g_utmp);
     advectv(g_u, g_v, dt, g_vtmp);
+    if (g_rainbow) {
+      advect_p(g_r, g_u, g_v, dt, g_rtmp);
+      memcpy(g_r, g_rtmp, sizeof(g_r));
+      advect_p(g_g, g_u, g_v, dt, g_gtmp);
+      memcpy(g_g, g_gtmp, sizeof(g_g));
+      advect_p(g_b, g_u, g_v, dt, g_btmp);
+      memcpy(g_b, g_btmp, sizeof(g_b));
+    }
     apply_body_forces(g_vtmp, dt);
 
     zero_horizontal_velocity_bounds(g_utmp);
@@ -820,6 +985,7 @@ void sim_step() {
   if (g_simulate_steps) {
     g_simulate_steps--;
   }
+  g_frame_count++;
 }
 
 // terminal color codes
@@ -831,6 +997,23 @@ void sim_step() {
 #define T_CYAN    "\x1B[36m"
 #define T_WHITE   "\x1B[37m"
 #define T_RESET   "\x1B[0m"
+
+int float_to_byte_color(float x) {
+  x = clampf(0.f, x, nextafterf(1.f, 0.f));
+  return (int)256.f*x;
+}
+
+float linear_to_sRGB(float x) {
+  return powf(x, 1.f/2.2); // approximation
+}
+
+int sprint_colorcode(char* buf, float r, float g, float b) {
+  // sizeof(buf) must be at least 20
+  int r_out = float_to_byte_color(linear_to_sRGB(r));
+  int g_out = float_to_byte_color(linear_to_sRGB(g));
+  int b_out = float_to_byte_color(linear_to_sRGB(b));
+  return sprintf(buf, "\x1B[38:2:%d:%d:%dm", r_out, g_out, b_out);
+}
 
 void draw_rows(struct buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
@@ -853,8 +1036,15 @@ void draw_rows(struct buffer* buf) {
       } else {
         uint8_t i = std::min(g_marker_count[y][x], max_symbol);
         bool has_water = i > 0;
-        if (!prev_water && has_water) {
+        if (!prev_water && has_water && !g_rainbow) {
           buffer_append(buf, T_BLUE, 5);
+        } else if (has_water && g_rainbow) {
+          char tmp[20];
+          int length = sprint_colorcode(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
+          if (length < 0) {
+            die("sprintf");
+          }
+          buffer_append(buf, tmp, length);
         } else if (prev_water && !has_water) {
           buffer_append(buf, T_RESET, 4);
         }
@@ -897,11 +1087,23 @@ void process_keypress() {
 
 args_t parse_args(int argc, char** argv) {
   args_t in;
+  in.rainbow = false;
+
   if (argc < 2) {
-    fprintf(stderr, "usage: %s <scenario>\n", argv[0]);
+    fprintf(stderr, "usage: %s [--rainbow] <scenario>\n", argv[0]);
     exit(1);
   }
-  in.scenario_file = argv[1];
+
+  for (int i = 1; i < argc - 1; ++i) {
+    if (!strcmp(argv[i], "--rainbow")) {
+      in.rainbow = true;
+    } else {
+      fprintf(stderr, "Unrecognized input: %s\n", argv[i]);
+      exit(1);
+    }
+  }
+
+  in.scenario_file = argv[argc-1];
   return in;
 }
 
@@ -918,6 +1120,7 @@ void handle_window_size_changed(int signal) {
 
 int main(int argc, char** argv) {
   args_t in = parse_args(argc, argv);
+  g_rainbow = in.rainbow;
 
   update_window_size();
   set_window_size_handler(&handle_window_size_changed);
