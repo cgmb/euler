@@ -297,145 +297,11 @@ void update_fluid_sources() {
   }
 }
 
-float interpolate_u(float u[Y][X], float y, float x) {
-  // bilinear interpolation
-  x = clampf(0, x, X-2);
-  y = clampf(0, y, Y-1);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floori = (int)x_floor;
-  int x_ceili = std::min(x_floori+1, int(X)-2);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floori = (int)y_floor;
-  int y_ceili = std::min(y_floori+1, int(Y)-1);
-
-  // bilinearly interpolate between the 4 surrounding points, excluding
-  // any points that do not have water
-  bool w[2][2];
-  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori,x_floori+1);
-  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori,x_ceili+1);
-  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili,x_floori+1);
-  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili,x_ceili+1);
-
-  assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
-
-  // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
-  // are out of water, but the x interpolation will take care of that.
-  float y1_frac;
-  if (!w[0][0]) {
-    y1_frac = 1.f;
-  } else if (!w[1][0]) {
-    y1_frac = 0.f;
-  } else {
-    y1_frac = y_frac;
-  }
-  float y1_mid = (1-y1_frac)*u[y_floori][x_floori] + y1_frac*u[y_ceili][x_floori];
-
-  float y2_frac;
-  if (!w[0][1]) {
-    y2_frac = 1.f;
-  } else if (!w[1][1]) {
-    y2_frac = 0.f;
-  } else {
-    y2_frac = y_frac;
-  }
-  float y2_mid = (1-y2_frac)*u[y_floori][x_ceili] + y2_frac*u[y_ceili][x_ceili];
-
-  float x0_frac;
-  if (!w[0][0] && !w[1][0]) {
-    x0_frac = 1.f;
-  } else if (!w[0][1] && !w[1][1]) {
-    x0_frac = 0.f;
-  } else {
-    x0_frac = x_frac;
-  }
-  return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
-}
-
-float interpolate_v(float v[Y][X], float y, float x) {
-  // bilinear interpolation
-  x = clampf(0, x, X-1);
-  y = clampf(0, y, Y-2);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floori = (int)x_floor;
-  int x_ceili = std::min(x_floori+1, int(X)-1);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floori = (int)y_floor;
-  int y_ceili = std::min(y_floori+1, int(Y)-2);
-
-  // bilinearly interpolate between the 4 surrounding points, excluding
-  // any points that do not have water
-  bool w[2][2];
-  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori+1,x_floori);
-  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori+1,x_ceili);
-  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili+1,x_floori);
-  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili+1,x_ceili);
-
-  assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
-
-  // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
-  // are out of water, but the x interpolation will take care of that.
-  float y1_frac;
-  if (!w[0][0]) {
-    y1_frac = 1.f;
-  } else if (!w[1][0]) {
-    y1_frac = 0.f;
-  } else {
-    y1_frac = y_frac;
-  }
-  float y1_mid = (1-y1_frac)*v[y_floori][x_floori] + y1_frac*v[y_ceili][x_floori];
-
-  float y2_frac;
-  if (!w[0][1]) {
-    y2_frac = 1.f;
-  } else if (!w[1][1]) {
-    y2_frac = 0.f;
-  } else {
-    y2_frac = y_frac;
-  }
-  float y2_mid = (1-y2_frac)*v[y_floori][x_ceili] + y2_frac*v[y_ceili][x_ceili];
-
-  float x0_frac;
-  if (!w[0][0] && !w[1][0]) {
-    x0_frac = 1.f;
-  } else if (!w[0][1] && !w[1][1]) {
-    x0_frac = 0.f;
-  } else {
-    x0_frac = x_frac;
-  }
-  return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
-}
-
-float interpolate_p(float q[Y][X], float y, float x) {
-  // bilinear interpolation
-  x = clampf(0, x, X-1);
-  y = clampf(0, y, Y-1);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floori = (int)x_floor;
-  int x_ceili = std::min(x_floori+1, int(X)-1);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floori = (int)y_floor;
-  int y_ceili = std::min(y_floori+1, int(Y)-1);
-
-  // bilinearly interpolate between the 4 surrounding points, excluding
-  // any points that do not have water
-  bool w[2][2];
-  w[0][0] = is_water(y_floori,x_floori);
-  w[0][1] = is_water(y_floori,x_ceili);
-  w[1][0] = is_water(y_ceili,x_floori);
-  w[1][1] = is_water(y_ceili,x_ceili);
-
+float bilinear(bool w[2][2], float q[Y][X],
+    float x_frac, int x_floori, int x_ceili,
+    float y_frac, int y_floori, int y_ceili) {
+  // uses bilinear interpolation to combine up to four samples from q
+  // at least one sample must be valid, as specified by w
   assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
 
   // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
@@ -469,6 +335,84 @@ float interpolate_p(float q[Y][X], float y, float x) {
     x0_frac = x_frac;
   }
   return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
+}
+
+float interpolate_u(float u[Y][X], float y, float x) {
+  // bilinear interpolation
+  x = clampf(0, x, X-2);
+  y = clampf(0, y, Y-1);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floori = (int)x_floor;
+  int x_ceili = std::min(x_floori+1, int(X)-2);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floori = (int)y_floor;
+  int y_ceili = std::min(y_floori+1, int(Y)-1);
+
+  // bilinearly interpolate between the 4 surrounding points, excluding
+  // any points that do not have water
+  bool w[2][2];
+  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori,x_floori+1);
+  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori,x_ceili+1);
+  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili,x_floori+1);
+  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili,x_ceili+1);
+
+  return bilinear(w, u, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
+}
+
+float interpolate_v(float v[Y][X], float y, float x) {
+  // bilinear interpolation
+  x = clampf(0, x, X-1);
+  y = clampf(0, y, Y-2);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floori = (int)x_floor;
+  int x_ceili = std::min(x_floori+1, int(X)-1);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floori = (int)y_floor;
+  int y_ceili = std::min(y_floori+1, int(Y)-2);
+
+  // bilinearly interpolate between the 4 surrounding points, excluding
+  // any points that do not have water
+  bool w[2][2];
+  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori+1,x_floori);
+  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori+1,x_ceili);
+  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili+1,x_floori);
+  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili+1,x_ceili);
+
+  return bilinear(w, v, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
+}
+
+float interpolate_p(float q[Y][X], float y, float x) {
+  // bilinear interpolation
+  x = clampf(0, x, X-1);
+  y = clampf(0, y, Y-1);
+
+  float x_floor;
+  float x_frac = modff(x, &x_floor);
+  int x_floori = (int)x_floor;
+  int x_ceili = std::min(x_floori+1, int(X)-1);
+
+  float y_floor;
+  float y_frac = modff(y, &y_floor);
+  int y_floori = (int)y_floor;
+  int y_ceili = std::min(y_floori+1, int(Y)-1);
+
+  // bilinearly interpolate between the 4 surrounding points, excluding
+  // any points that do not have water
+  bool w[2][2];
+  w[0][0] = is_water(y_floori,x_floori);
+  w[0][1] = is_water(y_floori,x_ceili);
+  w[1][0] = is_water(y_ceili,x_floori);
+  w[1][1] = is_water(y_ceili,x_ceili);
+
+  return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
 void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
