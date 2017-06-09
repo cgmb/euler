@@ -219,8 +219,8 @@ void sim_init(args_t in) {
   // parse the scenario file to init our fluid
   int i = 0;
   bool fluid[Y][X] = {};
-  for (size_t y = Y-1; y > 0 && i < length; --y) {
-    for (size_t x = 0; x < X && i < length; ++x) {
+  for (size_t y = Y-2; y > 0 && i < length; --y) {
+    for (size_t x = 1; x < X-1 && i < length; ++x) {
       char c = contents[i++];
       if (c == '\n') {
         break;
@@ -237,6 +237,16 @@ void sim_init(args_t in) {
     }
   }
   release_file(contents);
+
+  // add sinks around the outside so we have fewer edge cases
+  for (size_t y = 0; y < Y; ++y) {
+    g_sink[y][0] = true;
+    g_sink[y][X-1] = true;
+  }
+  for (size_t x = 0; x < X; ++x) {
+    g_sink[0][x] = true;
+    g_sink[Y-1][x] = true;
+  }
 
   // setup color
   for (size_t y = 0; y < Y; ++y) {
@@ -964,10 +974,10 @@ int sprint_color_code(char* buf, float r, float g, float b) {
 void draw_rows(struct buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol = 3;
-  const int y_cutoff = std::max((int)Y - g_wy, 0);
-  for (int y = Y; y-- > y_cutoff;) {
+  const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
+  for (int y = Y-1; y-- > y_cutoff;) {
     bool prev_water = false;
-    for (int x = 0; x < (int)X && x < g_wx; x++) {
+    for (int x = 1; x < (int)X-1 && x < g_wx+1; x++) {
       if (g_solid[y][x]) {
         if (prev_water) {
           buffer_append(buf, T_RESET, 4);
@@ -999,6 +1009,7 @@ void draw_rows(struct buffer* buf) {
       }
     }
     buffer_append(buf, T_RESET, 4);
+    buffer_append(buf, "\x1b[K", 3); // clear remainer of line
     if (y > y_cutoff) {
       buffer_append(buf, "\r\n", 2);
     }
@@ -1060,6 +1071,7 @@ void update_window_size() {
 void handle_window_size_changed(int signal) {
   (void)signal;
   update_window_size();
+  u_clear_screen();
 }
 
 int main(int argc, char** argv) {
