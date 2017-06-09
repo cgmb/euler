@@ -415,7 +415,7 @@ float interpolate_p(float q[Y][X], float y, float x) {
   return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       if (is_water(y,x) || is_water(y,x+1)) {
@@ -453,7 +453,7 @@ void advectu(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   }
 }
 
-void advectv(float u[Y][X], float v[Y][X], float dt,
+void advect_v(float u[Y][X], float v[Y][X], float dt,
   float out[Y][X]) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
@@ -918,13 +918,15 @@ void sim_step() {
     zero_horizontal_velocity_bounds(g_u);
     zero_vertical_velocity_bounds(g_v);
 
-    advectu(g_u, g_v, dt, g_utmp);
-    advectv(g_u, g_v, dt, g_vtmp);
+    advect_u(g_u, g_v, dt, g_utmp);
+    advect_v(g_u, g_v, dt, g_vtmp);
     if (g_rainbow) {
       advect_p(g_r, g_u, g_v, dt, g_rtmp);
       memcpy(g_r, g_rtmp, sizeof(g_r));
+
       advect_p(g_g, g_u, g_v, dt, g_gtmp);
       memcpy(g_g, g_gtmp, sizeof(g_g));
+
       advect_p(g_b, g_u, g_v, dt, g_btmp);
       memcpy(g_b, g_btmp, sizeof(g_b));
     }
@@ -942,27 +944,17 @@ void sim_step() {
   g_frame_count++;
 }
 
-// terminal color codes
-#define T_RED     "\x1B[31m"
-#define T_GREEN   "\x1B[32m"
-#define T_YELLOW  "\x1B[33m"
-#define T_BLUE    "\x1B[34m"
-#define T_MAGENTA "\x1B[35m"
-#define T_CYAN    "\x1B[36m"
-#define T_WHITE   "\x1B[37m"
-#define T_RESET   "\x1B[0m"
-
 int float_to_byte_color(float x) {
   x = clampf(0.f, x, nextafterf(1.f, 0.f));
   return (int)256.f*x;
 }
 
 float linear_to_sRGB(float x) {
-  return powf(x, 1.f/2.2); // approximation
+  return powf(x, 1/2.2f); // approximation
 }
 
-int sprint_colorcode(char* buf, float r, float g, float b) {
-  // sizeof(buf) must be at least 20
+int sprint_color_code(char* buf, float r, float g, float b) {
+  // buf must be at least 20 characters
   int r_out = float_to_byte_color(linear_to_sRGB(r));
   int g_out = float_to_byte_color(linear_to_sRGB(g));
   int b_out = float_to_byte_color(linear_to_sRGB(b));
@@ -994,7 +986,7 @@ void draw_rows(struct buffer* buf) {
           buffer_append(buf, T_BLUE, 5);
         } else if (has_water && g_rainbow) {
           char tmp[20];
-          int length = sprint_colorcode(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
+          int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
           if (length < 0) {
             die("sprintf");
           }

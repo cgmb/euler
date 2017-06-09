@@ -26,4 +26,14 @@ typedef void(*wshandler_t)(int);
 int get_window_size(int* rows, int* cols);
 int set_window_size_handler(wshandler_t fn);
 
+// color codes
+#define T_RED     "\x1B[31m"
+#define T_GREEN   "\x1B[32m"
+#define T_YELLOW  "\x1B[33m"
+#define T_BLUE    "\x1B[34m"
+#define T_MAGENTA "\x1B[35m"
+#define T_CYAN    "\x1B[36m"
+#define T_WHITE   "\x1B[37m"
+#define T_RESET   "\x1B[0m"
+
 #endif
