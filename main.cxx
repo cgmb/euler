@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -69,8 +70,8 @@ const float k_source_color_period = 10.f; // seconds
 const float k_initial_color_period = 60.f; // grid cells
 
 bool g_pause;
-unsigned g_simulate_steps;
-size_t g_frame_count;
+uint32_t g_simulate_steps;
+uint16_t g_frame_count;
 
 struct sparse_entry_t {
   int8_t a_diag;
