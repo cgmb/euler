@@ -80,6 +80,7 @@ struct sparse_entry_t {
 
 const size_t N = 4*Y*X;
 size_t g_markers_length;
+bool g_source_exhausted;
 vec2f g_markers[N];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
@@ -271,13 +272,20 @@ void sim_init(args_t in) {
 }
 
 void update_fluid_sources() {
+  // If we ever hit the max number of markers, that's it.
+  // The current extrapolation implementation assumes that the fluid is never
+  // more than one cell from a cell where fluid was in the previous step. If
+  // we stop and then later restart generating fluid, that may not hold true.
+  g_source_exhausted |= (g_markers_length == N-1);
+
   float t = 0.6f / k_source_color_period * g_frame_count;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (g_source[y][x]) {
-        while (g_markers_length < N-1 && g_marker_count[y][x] < 3) {
+        if (!g_source_exhausted && g_marker_count[y][x] < 4) {
           g_markers[g_markers_length++] = k_s*vec2f{x+g_rng(), y+g_rng()};
           g_marker_count[y][x]++;
+          g_source_exhausted |= (g_markers_length == N-1);
         }
         g_r[y][x] = hsv_basis(t + 2.f);
         g_g[y][x] = hsv_basis(t);
