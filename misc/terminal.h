@@ -16,6 +16,7 @@ void die(const char* msg);
 void u_clear_screen();
 
 void clear_screen(buffer* buf);
+void reposition_cursor(buffer* buf);
 void hide_cursor(buffer* buf);
 void show_cursor(buffer* buf);
 void enable_raw_mode();

@@ -107,6 +107,7 @@ void refresh_marker_counts() {
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
       if (g_sink[y][x]) {
+        // remove marker by swapping with back and resizing
         g_markers[i--] = g_markers[--g_markers_length];
       } else {
         g_marker_count[y][x]++;
@@ -1068,17 +1069,14 @@ void draw_rows(struct buffer* buf) {
   }
 }
 
-void refresh_screen(buffer* buf) {
+void draw(buffer* buf) {
   buffer_clear(buf);
-
-  clear_screen(buf);
-
+  reposition_cursor(buf);
   draw_rows(buf);
-
   buffer_write(buf);
 }
 
-void process_keypress() {
+bool process_keypress() {
   char c = '\0';
   if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN && errno != EINTR) {
     die("read");
@@ -1090,8 +1088,9 @@ void process_keypress() {
     g_simulate_steps++;
   } else if (c == 'q') {
     u_clear_screen();
-    exit(0);
+    return false;
   }
+  return true;
 }
 
 args_t parse_args(int argc, char** argv) {
@@ -1135,17 +1134,17 @@ int main(int argc, char** argv) {
   set_window_size_handler(&handle_window_size_changed);
 
   enable_raw_mode();
+  u_clear_screen();
   buffer buf = { 0, 0 };
 
   sim_init(in);
+  draw(&buf);
 
-  while (1) {
-    refresh_screen(&buf);
-    process_keypress();
+  while (process_keypress()) {
     sim_step();
+    draw(&buf);
   }
 
   buffer_free(&buf);
-
   return 0;
 }

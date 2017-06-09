@@ -22,6 +22,10 @@ void clear_screen(buffer* buf) {
   buffer_append(buf, "\x1b[H", 3);  // reposition cursor
 }
 
+void reposition_cursor(buffer* buf) {
+  buffer_append(buf, "\x1b[H", 3);  // reposition cursor
+}
+
 void hide_cursor(buffer* buf) {
   buffer_append(buf, "\x1b[?25l", 6);
 }
