@@ -220,7 +220,8 @@ void sim_init(args_t in) {
   int i = 0;
   bool fluid[Y][X] = {};
   for (size_t y = Y-2; y > 0 && i < length; --y) {
-    for (size_t x = 1; x < X-1 && i < length; ++x) {
+    size_t x;
+    for (x = 1; x < X-1 && i < length; ++x) {
       char c = contents[i++];
       if (c == '\n') {
         break;
@@ -234,6 +235,10 @@ void sim_init(args_t in) {
       } else if (c == '=') {
         g_sink[y][x] = true;
       }
+    }
+    // discard anything beyond the simulation width
+    if (x == X-1) {
+      while (i < length && contents[i++] != '\n');
     }
   }
   release_file(contents);
