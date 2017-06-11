@@ -204,6 +204,22 @@ void extrapolate_p(float q[Y][X]) {
   }
 }
 
+void colorize() {
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y,x)) {
+        float t = 0.f;
+        if (!g_source[y][x]) {
+          t = (x + y) * 6.f / k_initial_color_period;
+        }
+        g_r[y][x] = hsv_basis(t + 2.f);
+        g_g[y][x] = hsv_basis(t);
+        g_b[y][x] = hsv_basis(t - 2.f);
+      }
+    }
+  }
+}
+
 std::mt19937 g_rng_engine(123456789u);
 std::uniform_real_distribution<float> g_distribution(0.f, 1.0f);
 auto g_rng = [&](){ return g_distribution(g_rng_engine); };
@@ -253,21 +269,6 @@ void sim_init(args_t in) {
     g_sink[Y-1][x] = true;
   }
 
-  // setup color
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      if (fluid[y][x]) {
-        float t = 0.f;
-        if (!g_source[y][x]) {
-          t = (x + y) * 6.f / k_initial_color_period;
-        }
-        g_r[y][x] = hsv_basis(t + 2.f);
-        g_g[y][x] = hsv_basis(t);
-        g_b[y][x] = hsv_basis(t - 2.f);
-      }
-    }
-  }
-
   std::uniform_real_distribution<float> half_distribution(0.f, 0.5f);
   auto rng = [&](){ return half_distribution(g_rng_engine); };
 
@@ -286,6 +287,12 @@ void sim_init(args_t in) {
   }
   g_markers_length = idx;
   refresh_marker_counts();
+
+  // setup color
+  if (g_rainbow) {
+    colorize();
+  }
+
 }
 
 void update_fluid_sources() {
@@ -1038,6 +1045,10 @@ bool process_keypress() {
     g_pause = !g_pause;
   } else if (c == 'f') {
     g_simulate_steps++;
+  } else if (c == 'r') {
+    if (g_rainbow) {
+      colorize();
+    }
   } else if (c == 'q') {
     u_clear_screen();
     return false;
