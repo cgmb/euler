@@ -725,7 +725,7 @@ void print_fluid_matrix(FILE* f, const char* name, int q[Y*X][Y*X]) {
   fprintf(f, "]\n");
 }
 
-void print_fluid_vector(FILE* f, const char* name, float q[Y][X]) {
+void print_fluid_vector(FILE* f, const char* name, double q[Y][X]) {
   fprintf(f, "%s = [", name);
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
