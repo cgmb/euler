@@ -222,7 +222,7 @@ void colorize() {
 
 std::mt19937 g_rng_engine(123456789u);
 std::uniform_real_distribution<float> g_distribution(0.f, 1.0f);
-auto g_rng = [&](){ return g_distribution(g_rng_engine); };
+auto g_rng = [](){ return g_distribution(g_rng_engine); };
 
 void sim_init(args_t in) {
   int length;
@@ -980,7 +980,7 @@ int sprint_color_code(char* buf, float r, float g, float b) {
   int r_out = float_to_byte_color(linear_to_sRGB(r));
   int g_out = float_to_byte_color(linear_to_sRGB(g));
   int b_out = float_to_byte_color(linear_to_sRGB(b));
-  return sprintf(buf, "\x1B[38:2:%d:%d:%dm", r_out, g_out, b_out);
+  return sprintf(buf, "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
 }
 
 void draw_rows(struct buffer* buf) {
