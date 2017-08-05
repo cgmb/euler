@@ -50,10 +50,6 @@ noisy in comparison to level set methods and they tend to cluster.
 only uses RK1 integration. That necessitates smaller timesteps.
 * No preconditioning is done for the conjugate-gradient pressure solve, so
 the iteration limit is hit quite regularly.
-* Certain configurations of fluid and solid boundaries are only solvable with
-negative pressures. That is physically impossible, so those pressures are
-clamped to zero. This seems to suggest there is a bug in the implementation of
-pressure equations related to solid boundaries.
 
 [1]: https://www.cs.ubc.ca/~rbridson/fluidsimulation/fluids_notes.pdf
 [2]: https://github.com/rlguy/GridFluidSim3D
