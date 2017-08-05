@@ -26,20 +26,26 @@ struct args_t {
   bool rainbow;
 };
 
+// simulation constants
 const float k_s = 1; // side length
-const float k_invs = 1/k_s;
+const float k_inv_s = 1/k_s;
 const float k_d = 1.0; // density
-const float k_invd = 1/k_d;
+const float k_inv_d = 1/k_d;
+const float k_g = -10.f; // gravity
 
+// All arrays are the same size so functions like bilinear interpolation can
+// work on any array. The real size is smaller and is listed in the comments.
 float g_u[Y][X]; // [Y][X-1]
 float g_v[Y][X]; // [Y-1][X]
 float g_utmp[Y][X]; // [Y][X-1]
 float g_vtmp[Y][X]; // [Y-1][X]
 
+// grid cell properties from the scenario file
 bool g_solid[Y][X];
 bool g_source[Y][X];
 bool g_sink[Y][X];
 
+// https://en.wikipedia.org/wiki/HSL_and_HSV
 float hsv_basis(float t) {
   // periodic function, repeats after t=[0,6]
   // returns value in range of [0,1]
@@ -59,7 +65,8 @@ float hsv_basis(float t) {
   }
 }
 
-bool g_rainbow;
+// color data
+bool g_rainbow_enabled;
 float g_r[Y][X];
 float g_g[Y][X];
 float g_b[Y][X];
@@ -69,24 +76,25 @@ float g_btmp[Y][X];
 const float k_source_color_period = 10.f; // seconds
 const float k_initial_color_period = 60.f; // grid cells
 
+// simulation progress
 bool g_pause;
 uint32_t g_simulate_steps;
 uint16_t g_frame_count;
 
+// pressure matrix
 struct sparse_entry_t {
   int8_t a_diag;
   int8_t a_plus_i;
   int8_t a_plus_j;
 } g_a[Y][X];
 
+// marker particle data
 const size_t N = 4*Y*X;
 size_t g_markers_length;
 bool g_source_exhausted;
 vec2f g_markers[N];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
-
-const float k_g = -10.f;
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -102,8 +110,8 @@ void refresh_marker_counts() {
   memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
   memset(g_marker_count, '\0', sizeof(g_marker_count));
   for (size_t i = 0; i < g_markers_length; ++i) {
-    int x = (int)floorf(g_markers[i].x()*k_invs);
-    int y = (int)floorf(g_markers[i].y()*k_invs);
+    int x = (int)floorf(g_markers[i].x()*k_inv_s);
+    int y = (int)floorf(g_markers[i].y()*k_inv_s);
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
       if (g_sink[y][x]) {
@@ -126,8 +134,7 @@ bool is_water(size_t y, size_t x) {
   return g_marker_count[y][x] > 0;
 }
 
-void extrapolate_velocity_field() {
-  // extrapolate u
+void extrapolate_u(float u[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       bool was_invalid = !was_water(y,x) && !was_water(y,x+1);
@@ -141,18 +148,19 @@ void extrapolate_velocity_field() {
         for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
           for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
             if (was_water(y_u,x_u) || was_water(y_u,x_u+1)) {
-              total += g_u[y_u][x_u];
+              total += u[y_u][x_u];
               count++;
             }
           }
         }
         assert(count > 0);
-        g_u[y][x] = total / count;
+        u[y][x] = total / count;
       }
     }
   }
+}
 
-  // extrapolate v
+void extrapolate_v(float v[Y][X]) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       bool was_invalid = !was_water(y,x) && !was_water(y+1,x);
@@ -166,13 +174,13 @@ void extrapolate_velocity_field() {
         for (size_t y_v = y_lower; y_v <= y_upper; ++y_v) {
           for (size_t x_v = x_lower; x_v <= x_upper; ++x_v) {
             if (was_water(y_v,x_v) || was_water(y_v+1,x_v)) {
-              total += g_v[y_v][x_v];
+              total += v[y_v][x_v];
               count++;
             }
           }
         }
         assert(count > 0);
-        g_v[y][x] = total / count;
+        v[y][x] = total / count;
       }
     }
   }
@@ -289,7 +297,7 @@ void sim_init(args_t in) {
   refresh_marker_counts();
 
   // setup color
-  if (g_rainbow) {
+  if (g_rainbow_enabled) {
     colorize();
   }
 
@@ -466,8 +474,8 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
           }
         }
         float dy = (vv[0] + vv[1] + vv[2] + vv[3]) / div;
-        float prev_x = x - dx*dt*k_invs;
-        float prev_y = y - dy*dt*k_invs;
+        float prev_x = x - dx*dt*k_inv_s;
+        float prev_y = y - dy*dt*k_inv_s;
 
         out[y][x] = interpolate_u(g_u, prev_y, prev_x);
       }
@@ -505,8 +513,8 @@ void advect_v(float u[Y][X], float v[Y][X], float dt,
           }
         }
         float dx = (uu[0] + uu[1] + uu[2] + uu[3]) / div;
-        float prev_x = x - dx*dt*k_invs;
-        float prev_y = y - dy*dt*k_invs;
+        float prev_x = x - dx*dt*k_inv_s;
+        float prev_y = y - dy*dt*k_inv_s;
 
         out[y][x] = interpolate_v(g_v, prev_y, prev_x);
       }
@@ -522,8 +530,8 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
         // as my pressure solve doesn't check those bounds either
         float dy = (v[y][x] + v[y-1][x]) / 2;
         float dx = (u[y][x] + u[y][x-1]) / 2;
-        float prev_x = x - dx*dt*k_invs;
-        float prev_y = y - dy*dt*k_invs;
+        float prev_x = x - dx*dt*k_inv_s;
+        float prev_y = y - dy*dt*k_inv_s;
 
         out[y][x] = interpolate_p(q, prev_y, prev_x);
       }
@@ -532,10 +540,10 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
 }
 
 vec2f velocity_at(vec2f pos) {
-  float u_x = pos.x()*k_invs - 1.f;
-  float u_y = pos.y()*k_invs - 0.5f;
-  float v_x = pos.x()*k_invs - 0.5f;
-  float v_y = pos.y()*k_invs - 1.f;
+  float u_x = pos.x()*k_inv_s - 1.f;
+  float u_y = pos.y()*k_inv_s - 0.5f;
+  float v_x = pos.x()*k_inv_s - 0.5f;
+  float v_y = pos.y()*k_inv_s - 1.f;
 
   // out-of-bounds is handled in interpolate
   float x = interpolate_u(g_u, u_y, u_x);
@@ -565,8 +573,8 @@ void advect_markers(float dt) {
     while ((step[major_axis] > 0.f && p[major_axis] < e[major_axis]) ||
            (step[major_axis] < 0.f && p[major_axis] > e[major_axis])) {
       p += step;
-      int x_idx = (int)floorf(p.x()*k_invs);
-      int y_idx = (int)floorf(p.y()*k_invs);
+      int x_idx = (int)floorf(p.x()*k_inv_s);
+      int y_idx = (int)floorf(p.y()*k_inv_s);
       if (g_solid[y_idx][x_idx]) {
         // hit!
         e = p - step;
@@ -575,8 +583,8 @@ void advect_markers(float dt) {
       }
     }
     if (!hit) {
-      int x_idx = (int)floorf(e.x()*k_invs);
-      int y_idx = (int)floorf(e.y()*k_invs);
+      int x_idx = (int)floorf(e.x()*k_inv_s);
+      int y_idx = (int)floorf(e.y()*k_inv_s);
       if (g_solid[y_idx][x_idx]) {
         // hit!
         e = p;
@@ -756,7 +764,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (is_water(y,x)) {
         float up = x>0 ? u[y][x-1] : 0;
         float vp = y>0 ? v[y-1][x] : 0;
-        d0[y][x] = c * k_invs * (u[y][x] - up + v[y][x] - vp);
+        d0[y][x] = c * k_inv_s * (u[y][x] - up + v[y][x] - vp);
       } else {
         // not really necessary, but prevents uninitialized reads with memcpy
         d0[y][x] = 0.f;
@@ -825,7 +833,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (g_solid[y][x] || g_solid[y][x+1]) {
         uout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y,x+1)) {
-        uout[y][x] = u[y][x] - k_invd * k_invs * dt * (p[y][x+1] - p[y][x]);
+        uout[y][x] = u[y][x] - k_inv_d * k_inv_s * dt * (p[y][x+1] - p[y][x]);
       } else { // both cells are air
         uout[y][x] = 0.f;
       }
@@ -838,7 +846,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (g_solid[y][x] || g_solid[y+1][x]) {
         vout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y+1,x)) {
-        vout[y][x] = v[y][x] - k_invd * k_invs * dt * (p[y+1][x] - p[y][x]);
+        vout[y][x] = v[y][x] - k_inv_d * k_inv_s * dt * (p[y+1][x] - p[y][x]);
       } else { // both cells are air
         vout[y][x] = 0.f;
       }
@@ -876,7 +884,7 @@ float maxabs_v(float q[Y][X]) {
   return max;
 }
 
-void zero_horizontal_velocity_bounds(float u[Y][X]) {
+void zero_bounds_u(float u[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
@@ -888,7 +896,7 @@ void zero_horizontal_velocity_bounds(float u[Y][X]) {
   }
 }
 
-void zero_vertical_velocity_bounds(float v[Y][X]) {
+void zero_bounds_v(float v[Y][X]) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
@@ -930,19 +938,20 @@ void sim_step() {
 
     advect_markers(dt);
     refresh_marker_counts();
-    if (g_rainbow) {
+    if (g_rainbow_enabled) {
       extrapolate_p(g_r);
       extrapolate_p(g_g);
       extrapolate_p(g_b);
     }
     update_fluid_sources();
-    extrapolate_velocity_field();
-    zero_horizontal_velocity_bounds(g_u);
-    zero_vertical_velocity_bounds(g_v);
+    extrapolate_u(g_u);
+    extrapolate_v(g_v);
+    zero_bounds_u(g_u);
+    zero_bounds_v(g_v);
 
     advect_u(g_u, g_v, dt, g_utmp);
     advect_v(g_u, g_v, dt, g_vtmp);
-    if (g_rainbow) {
+    if (g_rainbow_enabled) {
       advect_p(g_r, g_u, g_v, dt, g_rtmp);
       memcpy(g_r, g_rtmp, sizeof(g_r));
 
@@ -954,8 +963,8 @@ void sim_step() {
     }
     apply_body_forces(g_vtmp, dt);
 
-    zero_horizontal_velocity_bounds(g_utmp);
-    zero_vertical_velocity_bounds(g_vtmp);
+    zero_bounds_u(g_utmp);
+    zero_bounds_v(g_vtmp);
 
     project(dt, g_utmp, g_vtmp, g_u, g_v);
   } while (frame_time > 0.f);
@@ -1004,9 +1013,9 @@ void draw_rows(struct buffer* buf) {
       } else {
         uint8_t i = std::min(g_marker_count[y][x], max_symbol);
         bool has_water = i > 0;
-        if (!prev_water && has_water && !g_rainbow) {
+        if (!prev_water && has_water && !g_rainbow_enabled) {
           buffer_append(buf, T_BLUE, 5);
-        } else if (has_water && g_rainbow) {
+        } else if (has_water && g_rainbow_enabled) {
           char tmp[20];
           int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
           if (length < 0) {
@@ -1046,7 +1055,7 @@ bool process_keypress() {
   } else if (c == 'f') {
     g_simulate_steps++;
   } else if (c == 'r') {
-    if (g_rainbow) {
+    if (g_rainbow_enabled) {
       colorize();
     }
   } else if (c == 'q') {
@@ -1092,7 +1101,7 @@ void handle_window_size_changed(int signal) {
 
 int main(int argc, char** argv) {
   args_t in = parse_args(argc, argv);
-  g_rainbow = in.rainbow;
+  g_rainbow_enabled = in.rainbow;
 
   update_window_size();
   set_window_size_handler(&handle_window_size_changed);
