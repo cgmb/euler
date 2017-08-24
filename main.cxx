@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <float.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -551,8 +552,8 @@ vec2f velocity_at(vec2f pos) {
   return vec2f{x,y};
 }
 
-// digital differential analyzer collisions
-// https://en.wikipedia.org/wiki/Digital_differential_analyzer_(graphics_algorithm)
+// Collision detection was developed ad-hoc, but I should probably read
+// A Fast Voxel Traversal Algorithm for Ray Tracing (1987)
 void advect_markers(float dt) {
   for (size_t i = 0; i < g_markers_length; ++i) {
     vec2f p = g_markers[i];
@@ -560,37 +561,123 @@ void advect_markers(float dt) {
     if (v.x() == 0.f && v.y() == 0.f) {
       continue;
     }
-    vec2f e = p + v*dt;
-    // step along the line by 1 square at a time, so find the longer direction
-    // and scale the vector so that's 1
-    const bool shallow_slope = fabsf(v.y()) < fabsf(v.x());
-    const vec2f step = shallow_slope ?
-      copysignf(1.f,v.x())*vec2f{1,v.y()/v.x()} : copysignf(1.f,v.y())*vec2f{v.x()/v.y(),1};
-    const int major_axis = shallow_slope ? 0 : 1; // 0 == X axis, 1 == Y axis
-    bool hit = false;
-    // the minor velocity direction may have a magnitude of zero,
-    // but the major velocity direction cannot be zero
-    while ((step[major_axis] > 0.f && p[major_axis] < e[major_axis]) ||
-           (step[major_axis] < 0.f && p[major_axis] > e[major_axis])) {
-      p += step;
-      int x_idx = (int)floorf(p.x()*k_inv_s);
-      int y_idx = (int)floorf(p.y()*k_inv_s);
-      if (g_solid[y_idx][x_idx]) {
-        // hit!
-        e = p - step;
-        hit = true;
-        break;
-      }
+    int x_idx = (int)floorf(p.x()*k_inv_s);
+    int y_idx = (int)floorf(p.y()*k_inv_s);
+
+    // next horizontal intersect
+    int x_dir;
+    if (v.x() > 0) {
+      x_dir = 1;
+    } else if (v.x() < 0) {
+      x_dir = -1;
+    } else {
+      x_dir = 0;
     }
-    if (!hit) {
-      int x_idx = (int)floorf(e.x()*k_inv_s);
-      int y_idx = (int)floorf(e.y()*k_inv_s);
-      if (g_solid[y_idx][x_idx]) {
-        // hit!
-        e = p;
-      }
+    int nx_idx = x_idx + (v.x() > 0 ? 1 : 0);
+    float nx_p = nx_idx*k_s;
+    // p1 = p0 + v*t
+    // t = (p1 - p0) / t
+    float x_t;
+    if (fabsf(v.x()) > 0.f) {
+      x_t = (nx_p - p.x()) / v.x();
+    } else {
+      x_t = FLT_MAX;
     }
-    g_markers[i] = e;
+    // at idx = x, we're on the boundary between x-1 and x
+    // if we're going left, the pressure cell we care about is x-1
+    // if we're going right, the pressure cell we care about is x
+    int x_idx_offset = v.x() < 0 ? -1 : 0;
+
+    // next vertical intersect
+    int y_dir;
+    if (v.y() > 0) {
+      y_dir = 1;
+    } else if (v.y() < 0) {
+      y_dir = -1;
+    } else {
+      y_dir = 0;
+    }
+    int ny_idx = y_idx + (v.y() > 0 ? 1 : 0);
+    float ny_p = ny_idx*k_s;
+    // p1 = p0 + v*t
+    // t = (p1 - p0) / t
+    float y_t;
+    if (fabsf(v.y()) > 0.f) {
+      y_t = (ny_p - p.y()) / v.y();
+    } else {
+      y_t = FLT_MAX;
+    }
+    // at idx = y, we're on the boundary between y-1 and y
+    // if we're going down, the pressure cell we care about is y-1
+    // if we're going up, the pressure cell we care about is y
+    int y_idx_offset = v.y() < 0 ? -1 : 0;
+
+    float prev_t = 0.f;
+    float near_t = std::min(x_t, y_t);
+    while (near_t < dt) {
+      if (x_t < y_t) {
+        // entered new horizontal cell
+        if (g_solid[y_idx][nx_idx + x_idx_offset]) {
+          // hit! we're done going horizontal
+          p += v * prev_t;
+          dt -= prev_t;
+          near_t = 0;
+          v[0] = 0.f;
+          x_t = FLT_MAX;
+
+          // update y_t since we're restarting t from this new position
+          if (fabsf(v.y()) > 0.f) {
+            y_t = (ny_p - p.y()) / v.y();
+          } else {
+            y_t = FLT_MAX;
+          }
+        } else {
+          // calculate next intersection
+          x_idx = nx_idx;
+          nx_idx = x_idx + x_dir;
+          nx_p = nx_idx*k_s;
+          if (fabsf(v.x()) > 0.f) {
+            x_t = (nx_p - p.x()) / v.x();
+          } else {
+            x_t = FLT_MAX;
+          }
+        }
+      } else {
+        // entered new vertical cell
+        if (g_solid[y_idx + y_idx_offset][x_idx]) {
+          // hit! we're done going vertical
+          p += v * prev_t;
+          dt -= prev_t;
+          near_t = 0;
+          v[1] = 0.f;
+          y_t = FLT_MAX;
+
+          // update x_t since we're restarting t from this new position
+          if (fabsf(v.x()) > 0.f) {
+            x_t = (nx_p - p.x()) / v.x();
+          } else {
+            x_t = FLT_MAX;
+          }
+        } else {
+          // calculate next intersection
+          y_idx = ny_idx;
+          ny_idx = y_idx + y_dir;
+          ny_p = ny_idx*k_s;
+          if (fabsf(v.y()) > 0.f) {
+            y_t = (ny_p - p.y()) / v.y();
+          } else {
+            y_t = FLT_MAX;
+          }
+        }
+      }
+      prev_t = near_t;
+      near_t = std::min(x_t, y_t);
+    }
+    if (near_t < FLT_MAX) {
+      g_markers[i] = p + v * dt;
+    } else {
+      g_markers[i] = p + v * prev_t;
+    }
   }
 }
 
