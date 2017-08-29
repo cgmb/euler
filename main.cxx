@@ -552,131 +552,94 @@ vec2f velocity_at(vec2f pos) {
   return vec2f{x,y};
 }
 
+float time_to(vec2f p0, vec2f p1, vec2f v, int axis) {
+  // p1 = p0 + v*t
+  // t = (p1 - p0) / t
+  float t;
+  if (fabsf(v[axis]) > 0.f) {
+    t = (p1[axis] - p0[axis]) / v[axis];
+  } else {
+    t = FLT_MAX;
+  }
+  return t;
+}
+
 // Collision detection was developed ad-hoc, but I should probably read
 // A Fast Voxel Traversal Algorithm for Ray Tracing (1987)
 void advect_markers(float dt) {
   for (size_t i = 0; i < g_markers_length; ++i) {
     vec2f p = g_markers[i];
     vec2f v = velocity_at(p);
-    if (v.x() == 0.f && v.y() == 0.f) {
-      continue;
-    }
+    vec2f np;
+
     int x_idx = (int)floorf(p.x()*k_inv_s);
     int y_idx = (int)floorf(p.y()*k_inv_s);
 
     // next horizontal intersect
-    int x_dir;
-    if (v.x() > 0) {
-      x_dir = 1;
-    } else if (v.x() < 0) {
-      x_dir = -1;
-    } else {
-      x_dir = 0;
-    }
+    int x_dir = v.x() > 0 ? 1 : -1;
     int nx_idx = x_idx + (v.x() > 0 ? 1 : 0);
-    float nx_p = nx_idx*k_s;
-    // p1 = p0 + v*t
-    // t = (p1 - p0) / t
-    float x_t;
-    if (fabsf(v.x()) > 0.f) {
-      x_t = (nx_p - p.x()) / v.x();
-    } else {
-      x_t = FLT_MAX;
-    }
+    np[0] = nx_idx*k_s;
+    float t_x = time_to(p, np, v, 0);
     // at idx = x, we're on the boundary between x-1 and x
     // if we're going left, the pressure cell we care about is x-1
     // if we're going right, the pressure cell we care about is x
     int x_idx_offset = v.x() < 0 ? -1 : 0;
 
     // next vertical intersect
-    int y_dir;
-    if (v.y() > 0) {
-      y_dir = 1;
-    } else if (v.y() < 0) {
-      y_dir = -1;
-    } else {
-      y_dir = 0;
-    }
+    int y_dir = v.y() > 0 ? 1 : -1;
     int ny_idx = y_idx + (v.y() > 0 ? 1 : 0);
-    float ny_p = ny_idx*k_s;
-    // p1 = p0 + v*t
-    // t = (p1 - p0) / t
-    float y_t;
-    if (fabsf(v.y()) > 0.f) {
-      y_t = (ny_p - p.y()) / v.y();
-    } else {
-      y_t = FLT_MAX;
-    }
+    np[1] = ny_idx*k_s;
+    float t_y = time_to(p, np, v, 1);
     // at idx = y, we're on the boundary between y-1 and y
     // if we're going down, the pressure cell we care about is y-1
     // if we're going up, the pressure cell we care about is y
     int y_idx_offset = v.y() < 0 ? -1 : 0;
 
-    float prev_t = 0.f;
-    float near_t = std::min(x_t, y_t);
-    while (near_t < dt) {
-      if (x_t < y_t) {
+    float t_prev = 0.f;
+    float t_near = std::min(t_x, t_y);
+    while (t_near < dt) {
+      if (t_x < t_y) {
         // entered new horizontal cell
         if (g_solid[y_idx][nx_idx + x_idx_offset]) {
           // hit! we're done going horizontal
-          p += v * prev_t;
-          dt -= prev_t;
-          near_t = 0;
+          p += v * t_prev;
+          dt -= t_prev;
+          t_near = 0;
           v[0] = 0.f;
-          x_t = FLT_MAX;
-
-          // update y_t since we're restarting t from this new position
-          if (fabsf(v.y()) > 0.f) {
-            y_t = (ny_p - p.y()) / v.y();
-          } else {
-            y_t = FLT_MAX;
-          }
+          t_x = FLT_MAX;
+          t_y = time_to(p, np, v, 1);
         } else {
           // calculate next intersection
           x_idx = nx_idx;
           nx_idx = x_idx + x_dir;
-          nx_p = nx_idx*k_s;
-          if (fabsf(v.x()) > 0.f) {
-            x_t = (nx_p - p.x()) / v.x();
-          } else {
-            x_t = FLT_MAX;
-          }
+          np[0] = nx_idx*k_s;
+          t_x = time_to(p, np, v, 0);
         }
       } else {
         // entered new vertical cell
         if (g_solid[y_idx + y_idx_offset][x_idx]) {
           // hit! we're done going vertical
-          p += v * prev_t;
-          dt -= prev_t;
-          near_t = 0;
+          p += v * t_prev;
+          dt -= t_prev;
+          t_near = 0;
           v[1] = 0.f;
-          y_t = FLT_MAX;
-
-          // update x_t since we're restarting t from this new position
-          if (fabsf(v.x()) > 0.f) {
-            x_t = (nx_p - p.x()) / v.x();
-          } else {
-            x_t = FLT_MAX;
-          }
+          t_y = FLT_MAX;
+          t_x = time_to(p, np, v, 0);
         } else {
           // calculate next intersection
           y_idx = ny_idx;
           ny_idx = y_idx + y_dir;
-          ny_p = ny_idx*k_s;
-          if (fabsf(v.y()) > 0.f) {
-            y_t = (ny_p - p.y()) / v.y();
-          } else {
-            y_t = FLT_MAX;
-          }
+          np[1] = ny_idx*k_s;
+          t_y = time_to(p, np, v, 1);
         }
       }
-      prev_t = near_t;
-      near_t = std::min(x_t, y_t);
+      t_prev = t_near;
+      t_near = std::min(t_x, t_y);
     }
-    if (near_t < FLT_MAX) {
-      g_markers[i] = p + v * dt;
+    if (t_near < FLT_MAX) {
+      g_markers[i] = p + v*dt;
     } else {
-      g_markers[i] = p + v * prev_t;
+      g_markers[i] = p + v*t_prev;
     }
   }
 }
