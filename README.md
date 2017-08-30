@@ -9,7 +9,31 @@
 
 An ASCII art fluid simulator
 
-[![block of water](https://asciinema.org/a/125371.png)][ex1]
+```
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+X                                                              X
+X                                                              X
+X                                                              X
+X                                                              X
+X                                                              X
+X                                                              X
+X                                                              X
+X                                                              X
+X                                                              X
+X               oO0O000                                        X
+X           o0O0000000000                                      X
+X       Oo0o00000000000O000                                    X
+Xo o0O00000O00O000000000o000                                   X
+X00000000o000000O000000000000O0o0OO                            X
+X000000O00000000000o0000000000O0o0000OOo0oo                    X
+X00000000000000000000000000000000o000O0000000O00oooo          oX
+X00000000000000000000000000000O000000o0000000000000000000000000X
+X00000000000000000000000000000O0000OO00000000000000000000000000X
+X0000000000000000O0000000o000000000OOO0O000000000000O00000000O0X
+XO0000000000000O0O0000000000000O0000O0o000000000000000000000000X
+X000O0O00O0O0O00000000000000000000000000000O00000000000000O0000X
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
 
 ## About
 Euler is a basic Eulerian fluid simulator based on the first edition of "Fluid
@@ -18,7 +42,8 @@ version of his [SIGGRAPH 2007 Course Notes][1], which were developed in
 conjunction with Matthias Müller-Fischer.
 
 The project aim is to be minimal, correct and fun. It runs on Linux and OSX,
-but unfortunately not on Windows.
+but unfortunately not on Windows. Sorry! If you're not able to run Euler, the
+next best alternative is watching [a replay][ex1].
 
 ## How to Build
 
@@ -32,7 +57,7 @@ source and `=` represents a fluid sink. Maybe check out one of the
 
     build/euler scenarios/block.txt
 
-Don't tell anyone, but I heard there's also a `--rainbow` flag you can pass.
+Don't tell anyone, but I heard there's also a secret `--rainbow` flag.
 [I wonder what that does...][ex2]
 
 ## Other Simulators
@@ -46,8 +71,8 @@ Euler due to GPU acceleration, but the underlying fluid simulation is similar.
 of volume, mass and momentum are not inherent properties of the simulation.
 * This implementation uses marker particles to track the fluid. They are rather
 noisy in comparison to level set methods and they tend to cluster.
-* Bridson recommends using RK2 integration for advection, but this simulation
-only uses RK1 integration. That necessitates smaller timesteps.
+* Bridson recommends using RK2 integration for advection but this simulation
+only uses RK1 integration, which necessitates smaller timesteps.
 * No preconditioning is done for the conjugate-gradient pressure solve, so
 the iteration limit is hit quite regularly.
 
