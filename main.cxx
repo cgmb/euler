@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <math.h>
+#include <time.h>
 
 #include <algorithm>
 #include <random>
@@ -1148,6 +1149,35 @@ void handle_window_size_changed(int signal) {
   u_clear_screen();
 }
 
+timespec subtract(const timespec& lhs, const timespec& rhs) {
+  timespec diff;
+  diff.tv_sec = lhs.tv_sec - rhs.tv_sec;
+  diff.tv_nsec = lhs.tv_nsec - rhs.tv_nsec;
+  if (lhs.tv_nsec < rhs.tv_nsec) {
+    diff.tv_sec -= 1;
+    diff.tv_nsec += 1e9;
+  }
+  return diff;
+}
+
+// wait for up to one second from the given start time
+// returns the current time when it exits
+timespec wait(long desired_interval_nsec, timespec start) {
+  timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+
+  timespec diff = subtract(now, start);
+  if (diff.tv_sec == 0) {
+    long wait_for = (desired_interval_nsec - diff.tv_nsec) / 1000;
+    if (wait_for > 0) {
+      usleep(wait_for);
+      clock_gettime(CLOCK_MONOTONIC, &now);
+    }
+  }
+
+  return now;
+}
+
 int main(int argc, char** argv) {
   args_t in = parse_args(argc, argv);
   g_rainbow_enabled = in.rainbow;
@@ -1162,8 +1192,10 @@ int main(int argc, char** argv) {
   sim_init(in);
   draw(&buf);
 
+  timespec interval_start;
   while (process_keypress()) {
     sim_step();
+    interval_start = wait(1e8, interval_start);
     draw(&buf);
   }
 
