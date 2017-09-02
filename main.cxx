@@ -484,8 +484,7 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   }
 }
 
-void advect_v(float u[Y][X], float v[Y][X], float dt,
-  float out[Y][X]) {
+void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x) || is_water(y+1,x)) {
@@ -554,7 +553,7 @@ vec2f velocity_at(vec2f pos) {
 
 float time_to(vec2f p0, vec2f p1, vec2f v, int axis) {
   // p1 = p0 + v*t
-  // t = (p1 - p0) / t
+  // t = (p1 - p0) / v
   float t;
   if (fabsf(v[axis]) > 0.f) {
     t = (p1[axis] - p0[axis]) / v[axis];
@@ -866,9 +865,10 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     }
   }
 
-  // clamp pressure to zero
-  // negative pressures are not physically possible and this prevents some weird artifacts
-  // this step is not mentioned in Bridson's notes, though, so perhaps there's a way to avoid it
+  // clamp pressure to zero or greater
+  // This step is not in Bridson's notes, but it fixes some weird artifacts.
+  // Without it, the pressure solve sometimes introduced negative pressures
+  // to eliminate divergence at solid boundaries, causing extreme stickyness
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x) && p[y][x] < 0.f) {
