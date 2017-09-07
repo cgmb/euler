@@ -73,8 +73,6 @@ of volume, mass and momentum are not inherent properties of the simulation.
 noisy in comparison to level set methods and they tend to cluster.
 * Bridson recommends using RK2 integration for advection but this simulation
 only uses RK1 integration, which necessitates smaller timesteps.
-* No preconditioning is done for the conjugate-gradient pressure solve, so
-the iteration limit is hit quite regularly.
 
 [1]: https://www.cs.ubc.ca/~rbridson/fluidsimulation/fluids_notes.pdf
 [2]: https://github.com/rlguy/GridFluidSim3D

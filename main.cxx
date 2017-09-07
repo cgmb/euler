@@ -666,11 +666,67 @@ int8_t get_a_minus_j(size_t y, size_t x) {
   return y>0 ? g_a[y-1][x].a_plus_j : 0;
 }
 
-void apply_preconditioner(double r[Y][X], double z[Y][X]) {
-  memcpy(z, r, sizeof(double)*Y*X); // skip!
+float sq(float x) {
+  return x*x;
 }
 
-double mat_dot(double a[Y][X], double b[Y][X]) {
+double sq(double x) {
+  return x*x;
+}
+
+double g_precon[Y][X];
+double g_q[Y][X];
+
+void apply_preconditioner(double r[Y][X], double z[Y][X]) {
+  // Incomplete Cholesky
+  // A ~= LLᵀ
+  // L = F * E_inv + E
+
+  // calculate E_inv (precon)
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y, x)) {
+        double a = g_a[y][x].a_diag;
+        double b = sq(get_a_minus_i(y,x) * g_precon[y][x-1]);
+        double c = sq(get_a_minus_j(y,x) * g_precon[y-1][x]);
+
+        double e = a - b - c;
+        if (e < 0.25*a) {
+          e = a != 0 ? a : 1;
+        }
+        g_precon[y][x] = 1 / sqrt(e);
+      }
+    }
+  }
+
+  // solve Lq = r
+  memset(g_q, '\0', sizeof(double)*Y*X);
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      if (is_water(y, x)) {
+        double t = r[y][x]
+          - g_a[y][x-1].a_plus_i * g_precon[y][x-1] * g_q[y][x-1]
+          - g_a[y-1][x].a_plus_j * g_precon[y-1][x] * g_q[y-1][x];
+        g_q[y][x] = t * g_precon[y][x];
+      }
+    }
+  }
+
+  // solve Lᵀz = q
+  memset(z, '\0', sizeof(double)*Y*X);
+  for (size_t y = Y; y--;) {
+    for (size_t x = X; x--;) {
+      if (is_water(y, x)) {
+        double t = g_q[y][x]
+          - g_a[y][x].a_plus_i * g_precon[y][x] * z[y][x+1]
+          - g_a[y][x].a_plus_j * g_precon[y][x] * z[y+1][x];
+        z[y][x] = t * g_precon[y][x];
+      }
+    }
+  }
+}
+
+double dot(double a[Y][X], double b[Y][X]) {
   double total = 0.f;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
@@ -682,7 +738,7 @@ double mat_dot(double a[Y][X], double b[Y][X]) {
   return total;
 }
 
-double all_zero(double r[Y][X]) {
+bool all_zero(double r[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -808,19 +864,19 @@ void print_matrix(FILE* f, const char* name, float q[Y][X]) {
 void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
   const double c = -k_d*k_s*k_s / dt; // -density * dt^2 / dt
   double d0[Y][X] = {}; // divergence * c
+
+  // calculate d0
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x)) {
         float up = x>0 ? u[y][x-1] : 0;
         float vp = y>0 ? v[y-1][x] : 0;
         d0[y][x] = c * k_inv_s * (u[y][x] - up + v[y][x] - vp);
-      } else {
-        // not really necessary, but prevents uninitialized reads with memcpy
-        d0[y][x] = 0.f;
       }
     }
   }
 
+  // calculate A
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
@@ -844,11 +900,11 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     double s[Y][X];      // search vector
     memcpy(s, z, sizeof(s));
 
-    double sigma = mat_dot(z,r);
+    double sigma = dot(z,r);
     for (size_t i = 0; i < max_iterations; ++i) {
       apply_a(s, z);
 
-      double alpha = sigma / mat_dot(z,s);
+      double alpha = sigma / dot(z,s);
       fmadd(s, alpha, p);  // p += alpha*s
       fmadd(z, -alpha, r); // r -= alpha*z
 
@@ -858,7 +914,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
 
       apply_preconditioner(r, z);
 
-      double sigma_new = mat_dot(z,r);
+      double sigma_new = dot(z,r);
       double beta = sigma_new / sigma;
       update_search(s,z,beta);
       sigma = sigma_new;
@@ -902,10 +958,6 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       }
     }
   }
-}
-
-float sq(float x) {
-  return x*x;
 }
 
 float maxabs_u(float q[Y][X]) {
