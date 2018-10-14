@@ -9,11 +9,11 @@
 #include <time.h>
 
 #include <algorithm>
-#include <random>
 
 #include "math/vec2f.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
+#include "misc/rng.h"
 
 // simulation size
 const size_t X = 100;
@@ -230,9 +230,11 @@ void colorize() {
   }
 }
 
-std::mt19937 g_rng_engine(123456789u);
-std::uniform_real_distribution<float> g_distribution(0.f, 1.0f);
-auto g_rng = [](){ return g_distribution(g_rng_engine); };
+float randf() {
+  static uint64_t rng_state = 0x9bd185c449534b91;
+  uint32_t x = xorshift64_32star(&rng_state);
+  return float(x / double(UINT32_MAX));
+}
 
 void sim_init(args_t in) {
   int length;
@@ -279,17 +281,14 @@ void sim_init(args_t in) {
     g_sink[Y-1][x] = true;
   }
 
-  std::uniform_real_distribution<float> half_distribution(0.f, 0.5f);
-  auto rng = [&](){ return half_distribution(g_rng_engine); };
-
   // setup fluid markers, 4 per cell, jittered
   size_t idx = 0;
   for (size_t i = 0; i < X; ++i) {
     for (size_t j = 0; j < Y; ++j) {
       if (fluid[j][i]) {
         for (size_t k = 0; k < 4; ++k) {
-          float x = i + (k < 2 ? 0 : 0.5f) + rng();
-          float y = j + (k % 2 ? 0 : 0.5f) + rng();
+          float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
+          float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
           g_markers[idx++] = k_s*vec2f{x,y};
         }
       }
@@ -316,7 +315,7 @@ void update_fluid_sources() {
     for (size_t x = 0; x < X; ++x) {
       if (g_source[y][x]) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
-          g_markers[g_markers_length++] = k_s*vec2f{x+g_rng(), y+g_rng()};
+          g_markers[g_markers_length++] = k_s*vec2f{x+randf(), y+randf()};
           g_marker_count[y][x]++;
           g_source_exhausted |= (g_markers_length == k_max_marker_count-1);
         }
