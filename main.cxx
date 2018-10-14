@@ -304,7 +304,7 @@ void sim_init(args_t in) {
 }
 
 void update_fluid_sources() {
-  // If we ever hit the max number of markers, that's it.
+  // If we ever hit the max number of markers, that's it for adding fluid.
   // The current extrapolation implementation assumes that the fluid is never
   // more than one cell from a cell where fluid was in the previous step. If
   // we stop and then later restart generating fluid, that may not hold true.
@@ -663,10 +663,6 @@ int8_t get_a_minus_i(size_t y, size_t x) {
 
 int8_t get_a_minus_j(size_t y, size_t x) {
   return y>0 ? g_a[y-1][x].a_plus_j : 0;
-}
-
-float sq(float x) {
-  return x*x;
 }
 
 double sq(double x) {
@@ -1035,7 +1031,7 @@ int sprint_color_code(char* buf, float r, float g, float b) {
 
 void draw_rows(struct buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
-  const uint8_t max_symbol = 3;
+  const uint8_t max_symbol_idx = 3;
   const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
   for (int y = Y-1; y-- > y_cutoff;) {
     bool prev_water = false;
@@ -1052,7 +1048,7 @@ void draw_rows(struct buffer* buf) {
         }
         buffer_append(buf, "=", 1);
       } else {
-        uint8_t i = std::min(g_marker_count[y][x], max_symbol);
+        uint8_t i = std::min(g_marker_count[y][x], max_symbol_idx);
         bool has_water = i > 0;
         if (!prev_water && has_water && !g_rainbow_enabled) {
           buffer_append(buf, T_BLUE, 5);
