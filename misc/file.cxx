@@ -25,10 +25,12 @@ char* load_file(const char* filename, int* length) {
   if (!contents) {
     goto close_exit;
   }
-  if (fread(contents, fsize, 1, f)) {
-    goto close_exit;
+  if (1 == fread(contents, fsize, 1, f)) {
+    contents[fsize] = '\0';
+  } else {
+    free(contents);
+    contents = NULL;
   }
-  contents[fsize] = '\0';
 close_exit:
   fclose(f);
 exit:
