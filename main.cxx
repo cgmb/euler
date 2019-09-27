@@ -1180,6 +1180,7 @@ int main(int argc, char** argv) {
   draw(&buf);
 
   timespec interval_start;
+  clock_gettime(CLOCK_MONOTONIC, &interval_start);
   while (process_keypress()) {
     sim_step();
     interval_start = wait(1e8, interval_start);
