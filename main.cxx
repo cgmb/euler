@@ -797,7 +797,7 @@ void fmadd(double a[Y][X], double b, double c[Y][X]) {
 }
 
 void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
-  const double c = -k_d*k_s*k_s / dt; // -density * dt^2 / dt
+  const double c = -k_d*k_s*k_s / dt; // -density * dx^2 / dt
   double d0[Y][X] = {}; // divergence * c
 
   // calculate d0
@@ -1029,7 +1029,7 @@ int sprint_color_code(char* buf, float r, float g, float b) {
   return sprintf(buf, "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
 }
 
-void draw_rows(struct buffer* buf) {
+void draw_rows(buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol_idx = 3;
   const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
