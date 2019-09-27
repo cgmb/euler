@@ -112,8 +112,8 @@ void refresh_marker_counts() {
   memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
   memset(g_marker_count, '\0', sizeof(g_marker_count));
   for (size_t i = 0; i < g_markers_length; ++i) {
-    int x = (int)floorf(g_markers[i].x()*k_inv_s);
-    int y = (int)floorf(g_markers[i].y()*k_inv_s);
+    int x = (int)floorf(g_markers[i].x*k_inv_s);
+    int y = (int)floorf(g_markers[i].y*k_inv_s);
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
       if (g_sink[y][x]) {
@@ -539,10 +539,10 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
 }
 
 vec2f velocity_at(vec2f pos) {
-  float u_x = pos.x()*k_inv_s - 1.f;
-  float u_y = pos.y()*k_inv_s - 0.5f;
-  float v_x = pos.x()*k_inv_s - 0.5f;
-  float v_y = pos.y()*k_inv_s - 1.f;
+  float u_x = pos.x*k_inv_s - 1.f;
+  float u_y = pos.y*k_inv_s - 0.5f;
+  float v_x = pos.x*k_inv_s - 0.5f;
+  float v_y = pos.y*k_inv_s - 1.f;
 
   // out-of-bounds is handled in interpolate
   float x = interpolate_u(g_u, u_y, u_x);
@@ -570,28 +570,28 @@ void advect_markers(float dt) {
     vec2f v = velocity_at(p);
     vec2f np;
 
-    int x_idx = (int)floorf(p.x()*k_inv_s);
-    int y_idx = (int)floorf(p.y()*k_inv_s);
+    int x_idx = (int)floorf(p.x*k_inv_s);
+    int y_idx = (int)floorf(p.y*k_inv_s);
 
     // next horizontal intersect
-    int x_dir = v.x() > 0 ? 1 : -1;
-    int nx_idx = x_idx + (v.x() > 0 ? 1 : 0);
+    int x_dir = v.x > 0 ? 1 : -1;
+    int nx_idx = x_idx + (v.x > 0 ? 1 : 0);
     np[0] = nx_idx*k_s;
     float t_x = time_to(p, np, v, 0);
     // at idx = x, we're on the boundary between x-1 and x
     // if we're going left, the pressure cell we care about is x-1
     // if we're going right, the pressure cell we care about is x
-    int x_idx_offset = v.x() < 0 ? -1 : 0;
+    int x_idx_offset = v.x < 0 ? -1 : 0;
 
     // next vertical intersect
-    int y_dir = v.y() > 0 ? 1 : -1;
-    int ny_idx = y_idx + (v.y() > 0 ? 1 : 0);
+    int y_dir = v.y > 0 ? 1 : -1;
+    int ny_idx = y_idx + (v.y > 0 ? 1 : 0);
     np[1] = ny_idx*k_s;
     float t_y = time_to(p, np, v, 1);
     // at idx = y, we're on the boundary between y-1 and y
     // if we're going down, the pressure cell we care about is y-1
     // if we're going up, the pressure cell we care about is y
-    int y_idx_offset = v.y() < 0 ? -1 : 0;
+    int y_idx_offset = v.y < 0 ? -1 : 0;
 
     float t_prev = 0.f;
     float t_near = std::min(t_x, t_y);
