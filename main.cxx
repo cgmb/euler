@@ -11,9 +11,11 @@
 #include <algorithm>
 
 #include "math/vec2f.h"
+#include "math/vec2zu.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
 #include "misc/rng.h"
+#include "world_grid.h"
 
 // simulation size
 const size_t X = 100;
@@ -43,9 +45,7 @@ float g_utmp[Y][X]; // [Y][X-1]
 float g_vtmp[Y][X]; // [Y-1][X]
 
 // grid cell properties from the scenario file
-bool g_solid[Y][X];
-bool g_source[Y][X];
-bool g_sink[Y][X];
+WorldGrid  g_grid;
 
 // https://en.wikipedia.org/wiki/HSL_and_HSV
 float hsv_basis(float t) {
@@ -116,7 +116,7 @@ void refresh_marker_counts() {
     int y = (int)floorf(g_markers[i].y*k_inv_s);
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
-      if (g_sink[y][x]) {
+      if (g_grid.is_sink({size_t(x),size_t(y)})) {
         // remove marker by swapping with back and resizing
         g_markers[i--] = g_markers[--g_markers_length];
       } else {
@@ -219,7 +219,7 @@ void colorize() {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x)) {
         float t = 0.f;
-        if (!g_source[y][x]) {
+        if (!g_grid.is_source({x,y})) {
           t = (x + y) * 6.f / k_initial_color_period;
         }
         g_r[y][x] = hsv_basis(t + 2.f);
@@ -237,55 +237,13 @@ float randf() {
 }
 
 void sim_init(args_t in) {
-  int length;
-  char* contents = load_file(in.scenario_file, &length);
-  if (!contents) {
-    fprintf(stderr, "Could not load %s!\n", in.scenario_file);
-    exit(1);
-  }
-
-  // parse the scenario file to init our fluid
-  int i = 0;
-  bool fluid[Y][X] = {};
-  for (size_t y = Y-2; y > 0 && i < length; --y) {
-    size_t x;
-    for (x = 1; x < X-1 && i < length; ++x) {
-      char c = contents[i++];
-      if (c == '\n') {
-        break;
-      } else if (c == 'X') {
-        g_solid[y][x] = true;
-      } else if (c == '0') {
-        fluid[y][x] = true;
-      } else if (c == '?') {
-        fluid[y][x] = true;
-        g_source[y][x] = true;
-      } else if (c == '=') {
-        g_sink[y][x] = true;
-      }
-    }
-    // discard anything beyond the simulation width
-    if (x == X-1) {
-      while (i < length && contents[i++] != '\n');
-    }
-  }
-  release_file(contents);
-
-  // add sinks around the outside so we have fewer edge cases
-  for (size_t y = 0; y < Y; ++y) {
-    g_sink[y][0] = true;
-    g_sink[y][X-1] = true;
-  }
-  for (size_t x = 0; x < X; ++x) {
-    g_sink[0][x] = true;
-    g_sink[Y-1][x] = true;
-  }
+  g_grid = WorldGrid::from_file(in.scenario_file, X, Y);
 
   // setup fluid markers, 4 per cell, jittered
   size_t idx = 0;
   for (size_t i = 0; i < X; ++i) {
     for (size_t j = 0; j < Y; ++j) {
-      if (fluid[j][i]) {
+      if (g_grid.is_fluid({i,j})) {
         for (size_t k = 0; k < 4; ++k) {
           float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
           float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
@@ -313,7 +271,7 @@ void update_fluid_sources() {
   float t = 0.6f / k_source_color_period * g_frame_count;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      if (g_source[y][x]) {
+      if (g_grid.is_source({x,y})) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
           g_markers[g_markers_length++] = k_s*vec2f{x+randf(), y+randf()};
           g_marker_count[y][x]++;
@@ -598,7 +556,7 @@ void advect_markers(float dt) {
     while (t_near < dt) {
       if (t_x < t_y) {
         // entered new horizontal cell
-        if (g_solid[y_idx][nx_idx + x_idx_offset]) {
+        if (g_grid.is_solid({nx_idx + x_idx_offset, y_idx})) {
           // hit! we're done going horizontal
           p += v * t_prev;
           dt -= t_prev;
@@ -615,7 +573,7 @@ void advect_markers(float dt) {
         }
       } else {
         // entered new vertical cell
-        if (g_solid[y_idx + y_idx_offset][x_idx]) {
+        if (g_grid.is_solid({x_idx, y_idx + y_idx_offset})) {
           // hit! we're done going vertical
           p += v * t_prev;
           dt -= t_prev;
@@ -653,8 +611,8 @@ void apply_body_forces(float v[Y][X], float dt) {
 int8_t nonsolid_neighbor_count(size_t y, size_t x) {
   // this function is only used on fluid cells, and the edge cells
   // should never be fluid, so no bounds checks required
-  return 4 - g_solid[y][x-1] - g_solid[y][x+1]
-           - g_solid[y-1][x] - g_solid[y+1][x];
+  return 4 - g_grid.is_solid({x-1, y}) - g_grid.is_solid({x+1, y})
+           - g_grid.is_solid({x, y-1}) - g_grid.is_solid({x, y+1});
 }
 
 int8_t get_a_minus_i(size_t y, size_t x) {
@@ -871,7 +829,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // update horizontal velocities
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
-      if (g_solid[y][x] || g_solid[y][x+1]) {
+      if (g_grid.is_solid({x,y}) || g_grid.is_solid({x+1,y})) {
         uout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y,x+1)) {
         uout[y][x] = u[y][x] - k_inv_d * k_inv_s * dt * (p[y][x+1] - p[y][x]);
@@ -884,7 +842,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // update vertical velocities
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      if (g_solid[y][x] || g_solid[y+1][x]) {
+      if (g_grid.is_solid({x,y}) || g_grid.is_solid({x,y+1})) {
         vout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y+1,x)) {
         vout[y][x] = v[y][x] - k_inv_d * k_inv_s * dt * (p[y+1][x] - p[y][x]);
@@ -926,7 +884,7 @@ void zero_bounds_u(float u[Y][X]) {
     for (size_t x = 0; x < X-1; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
       bool is_air = !is_water(y,x) && !is_water(y,x+1);
-      if (is_air || g_solid[y][x] || g_solid[y][x+1]) {
+      if (is_air || g_grid.is_solid({x,y}) || g_grid.is_solid({x+1,y})) {
         u[y][x] = 0.f;
       }
     }
@@ -938,7 +896,7 @@ void zero_bounds_v(float v[Y][X]) {
     for (size_t x = 0; x < X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
       bool is_air = !is_water(y,x) && !is_water(y+1,x);
-      if (is_air || g_solid[y][x] || g_solid[y+1][x]) {
+      if (is_air || g_grid.is_solid({x,y}) || g_grid.is_solid({x,y+1})) {
         v[y][x] = 0.f;
       }
     }
@@ -1036,13 +994,13 @@ void draw_rows(struct buffer* buf) {
   for (int y = Y-1; y-- > y_cutoff;) {
     bool prev_water = false;
     for (int x = 1; x < (int)X-1 && x < g_wx+1; x++) {
-      if (g_solid[y][x]) {
+      if (g_grid.is_solid({x,y})) {
         if (prev_water) {
           buffer_append(buf, T_RESET, 4);
         }
         buffer_append(buf, "X", 1);
         prev_water = false;
-      } else if (g_sink[y][x]) {
+      } else if (g_grid.is_sink({x,y})) {
         if (prev_water) {
           buffer_append(buf, T_RESET, 4);
         }
