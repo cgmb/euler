@@ -1,5 +1,4 @@
-#ifndef VEC2F_H
-#define VEC2F_H
+#pragma once
 
 #include <array>
 #include <cmath>
@@ -122,4 +121,3 @@ inline float magnitude(const vec2f& v) {
   return std::sqrt(magnitude_sq(v));
 }
 
-#endif

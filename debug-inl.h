@@ -1,5 +1,4 @@
-#ifndef DEBUG_INL_H
-#define DEBUG_INL_H
+#pragma once
 
 /*
    These debug functions are used to print out the data structures used in the
@@ -86,5 +85,3 @@ void print_matrix(FILE* f, const char* name, float q[Y][X]) {
   }
   fprintf(f, "]\n");
 }
-
-#endif
