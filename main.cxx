@@ -1029,6 +1029,10 @@ int sprint_color_code(char* buf, float r, float g, float b) {
   return sprintf(buf, "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
 }
 
+void buffer_appendz(buffer* buf, const char* s) {
+  buffer_append(buf, s, strlen(s));
+}
+
 void draw_rows(buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol_idx = 3;
@@ -1038,20 +1042,20 @@ void draw_rows(buffer* buf) {
     for (int x = 1; x < (int)X-1 && x < g_wx+1; x++) {
       if (g_solid[y][x]) {
         if (prev_water) {
-          buffer_append(buf, T_RESET, 4);
+          buffer_appendz(buf, T_RESET);
         }
-        buffer_append(buf, "X", 1);
+        buffer_appendz(buf, "X");
         prev_water = false;
       } else if (g_sink[y][x]) {
         if (prev_water) {
-          buffer_append(buf, T_RESET, 4);
+          buffer_appendz(buf, T_RESET);
         }
-        buffer_append(buf, "=", 1);
+        buffer_appendz(buf, "=");
       } else {
         uint8_t i = std::min(g_marker_count[y][x], max_symbol_idx);
         bool has_water = i > 0;
         if (!prev_water && has_water && !g_rainbow_enabled) {
-          buffer_append(buf, T_BLUE, 5);
+          buffer_appendz(buf, T_BLUE);
         } else if (has_water && g_rainbow_enabled) {
           char tmp[20];
           int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
@@ -1060,16 +1064,16 @@ void draw_rows(buffer* buf) {
           }
           buffer_append(buf, tmp, length);
         } else if (prev_water && !has_water) {
-          buffer_append(buf, T_RESET, 4);
+          buffer_appendz(buf, T_RESET);
         }
-        buffer_append(buf, symbol[i], 1);
+        buffer_appendz(buf, symbol[i]);
         prev_water = has_water;
       }
     }
-    buffer_append(buf, T_RESET, 4);
-    buffer_append(buf, "\x1b[K", 3); // clear remainer of line
+    buffer_appendz(buf, T_RESET);
+    buffer_appendz(buf, "\x1b[K"); // clear remainer of line
     if (y > y_cutoff) {
-      buffer_append(buf, "\r\n", 2);
+      buffer_appendz(buf, "\r\n");
     }
   }
 }
