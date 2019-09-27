@@ -91,12 +91,12 @@ struct sparse_entry_t {
 } g_a[Y][X];
 
 // marker particle data
-const size_t k_max_marker_count = 4*Y*X;
+const size_t k_max_marker_count = UINT16_MAX;
 size_t g_markers_length;
 bool g_source_exhausted;
 vec2f g_markers[k_max_marker_count];
-uint8_t g_marker_count[Y][X];
-uint8_t g_old_marker_count[Y][X];
+uint16_t g_marker_count[Y][X];
+uint16_t g_old_marker_count[Y][X];
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -993,7 +993,7 @@ void buffer_appendz(buffer* buf, const char* s) {
 
 void draw_rows(struct buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
-  const uint8_t max_symbol_idx = 3;
+  const uint16_t max_symbol_idx = 3;
   const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
   for (int y = Y-1; y-- > y_cutoff;) {
     bool prev_water = false;
@@ -1010,7 +1010,7 @@ void draw_rows(struct buffer* buf) {
         }
         buffer_appendz(buf, "=");
       } else {
-        uint8_t i = std::min(g_marker_count[y][x], max_symbol_idx);
+        uint16_t i = std::min(g_marker_count[y][x], max_symbol_idx);
         bool has_water = i > 0;
         if (!prev_water && has_water && !g_rainbow_enabled) {
           buffer_appendz(buf, T_BLUE);
