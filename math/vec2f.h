@@ -1,18 +1,13 @@
 #ifndef VEC2F_H
 #define VEC2F_H
 
-#include <array>
-#include <cmath>
+#include <assert.h>
+#include <math.h>
+#include <stddef.h>
 
 struct vec2f {
   vec2f() = default;
   vec2f(float x, float y);
-
-  float x() const;
-  float y() const;
-
-  const float* data() const;
-  float* data();
 
   const float& operator[](size_t i) const;
   float& operator[](size_t i);
@@ -22,44 +17,27 @@ struct vec2f {
   vec2f& operator-=(const vec2f& rhs);
   vec2f& operator/=(float rhs);
 
-private:
-  std::array<float, 2> data_;
+public:
+  float x;
+  float y;
 };
 
-inline vec2f::vec2f(float x, float y) {
-    (*this)[0] = x;
-    (*this)[1] = y;
+/* Non-Member Functions */
+
+inline float dot(const vec2f& lhs, const vec2f& rhs) {
+  return lhs.x*rhs.x + lhs.y*rhs.y;
 }
 
-inline float vec2f::x() const {
-  return (*this)[0];
+inline float magnitude_sq(const vec2f& v) {
+  return v.x*v.x + v.y*v.y;
 }
 
-inline float vec2f::y() const {
-  return (*this)[1];
+inline float magnitude(const vec2f& v) {
+  return sqrtf(magnitude_sq(v));
 }
 
-inline const float* vec2f::data() const {
-  return data_.data();
-}
-
-inline float* vec2f::data() {
-  return data_.data();
-}
-
-inline const float& vec2f::operator[](size_t i) const {
-  return data_[i];
-}
-
-inline float& vec2f::operator[](size_t i) {
-  return data_[i];
-}
-
-inline vec2f& vec2f::operator*=(float rhs) {
-  vec2f& lhs = *this;
-  lhs[0] *= rhs;
-  lhs[1] *= rhs;
-  return lhs;
+inline vec2f operator/(vec2f lhs, float rhs) {
+  return lhs /= rhs;
 }
 
 inline vec2f operator*(vec2f lhs, float rhs) {
@@ -70,22 +48,8 @@ inline vec2f operator*(float lhs, vec2f rhs) {
   return rhs *= lhs;
 }
 
-inline vec2f& vec2f::operator+=(const vec2f& rhs) {
-  vec2f& lhs = *this;
-  lhs[0] += rhs[0];
-  lhs[1] += rhs[1];
-  return lhs;
-}
-
 inline vec2f operator+(vec2f lhs, const vec2f& rhs) {
   return lhs += rhs;
-}
-
-inline vec2f& vec2f::operator-=(const vec2f& rhs) {
-  vec2f& lhs = *this;
-  lhs[0] -= rhs[0];
-  lhs[1] -= rhs[1];
-  return lhs;
 }
 
 inline vec2f operator-(vec2f lhs, const vec2f& rhs) {
@@ -93,33 +57,62 @@ inline vec2f operator-(vec2f lhs, const vec2f& rhs) {
 }
 
 inline vec2f operator-(vec2f rhs) {
-  rhs[0] = -rhs[0];
-  rhs[1] = -rhs[1];
+  rhs.x = -rhs.x;
+  rhs.y = -rhs.y;
   return rhs;
+}
+
+/* Member Functions */
+
+inline vec2f::vec2f(float x, float y)
+  : x(x)
+  , y(y)
+{}
+
+inline const float& vec2f::operator[](size_t i) const {
+  switch (i) {
+    case 0: return x;
+    case 1: return y;
+    default: assert(i < 2);
+  }
+  __builtin_unreachable();
+}
+
+inline float& vec2f::operator[](size_t i) {
+  switch (i) {
+    case 0: return x;
+    case 1: return y;
+    default: assert(i < 2);
+  }
+  __builtin_unreachable();
+}
+
+inline vec2f& vec2f::operator*=(float rhs) {
+  vec2f& lhs = *this;
+  lhs.x *= rhs;
+  lhs.y *= rhs;
+  return lhs;
+}
+
+inline vec2f& vec2f::operator+=(const vec2f& rhs) {
+  vec2f& lhs = *this;
+  lhs.x += rhs.x;
+  lhs.y += rhs.y;
+  return lhs;
+}
+
+inline vec2f& vec2f::operator-=(const vec2f& rhs) {
+  vec2f& lhs = *this;
+  lhs.x -= rhs.x;
+  lhs.y -= rhs.y;
+  return lhs;
 }
 
 inline vec2f& vec2f::operator/=(float rhs) {
   vec2f& lhs = *this;
-  lhs[0] /= rhs;
-  lhs[1] /= rhs;
+  lhs.x /= rhs;
+  lhs.y /= rhs;
   return lhs;
-}
-
-inline vec2f operator/(vec2f lhs, float rhs) {
-  lhs /= rhs;
-  return lhs;
-}
-
-inline float dot(const vec2f& lhs, const vec2f& rhs) {
-  return lhs[0]*rhs[0] + lhs[1]*rhs[1];
-}
-
-inline float magnitude_sq(const vec2f& v) {
-  return v[0]*v[0] + v[1]*v[1];
-}
-
-inline float magnitude(const vec2f& v) {
-  return std::sqrt(magnitude_sq(v));
 }
 
 #endif
