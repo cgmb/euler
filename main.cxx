@@ -1005,44 +1005,76 @@ void buffer_appendz(buffer* buf, const char* s) {
   buffer_append(buf, s, strlen(s));
 }
 
+struct run_t {
+  int length;
+  char type;
+};
+
+char type_at(const vec2zu& index) {
+  if (g_grid.is_solid(index)) {
+    return 'X';
+  } else if (g_grid.is_sink(index)) {
+    return '=';
+  } else if (g_grid.is_fluid(index)) {
+    return '0';
+  } else {
+    return ' ';
+  }
+}
+
+int mini(int a, int b) {
+  return a < b ? a : b;
+}
+
+void draw_fluid(const vec2zu& end, int count, buffer* buf) {
+  const char symbol[] = {'o','O','0'};
+
+  if (!g_rainbow_enabled) {
+    buffer_appendz(buf, T_BLUE);
+  }
+  const size_t y = end.y;
+  for (size_t x = end.x - count; x < end.x; x++) {
+    if (g_rainbow_enabled) {
+      char tmp[20];
+      int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
+      if (length < 0) {
+        die("sprintf");
+      }
+      buffer_append(buf, tmp, length);
+    }
+    buffer_append_char(buf, symbol[mini(g_marker_count[y][x]-1, 2)]);
+  }
+  buffer_appendz(buf, T_RESET);
+}
+
+void draw_nonfluid(char type, int count, buffer* buf) {
+  buffer_append_nchars(buf, type, count);
+}
+
+void draw_run(const run_t& run, const vec2zu& index, buffer* buf) {
+  if (run.type == '0') {
+    draw_fluid(index, run.length, buf);
+  } else {
+    draw_nonfluid(run.type, run.length, buf);
+  }
+}
+
 void draw_rows(buffer* buf) {
-  const char* symbol[4] = {" ","o","O","0"};
-  const uint16_t max_symbol_idx = 3;
   const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
   for (int y = Y-1; y-- > y_cutoff;) {
-    bool prev_water = false;
-    for (int x = 1; x < (int)X-1 && x < g_wx+1; x++) {
-      if (g_grid.is_solid({x,y})) {
-        if (prev_water) {
-          buffer_appendz(buf, T_RESET);
-        }
-        buffer_appendz(buf, "X");
-        prev_water = false;
-      } else if (g_grid.is_sink({x,y})) {
-        if (prev_water) {
-          buffer_appendz(buf, T_RESET);
-        }
-        buffer_appendz(buf, "=");
+    run_t run = { 1, type_at({1,y}) };
+    int x = 2;
+    for (; x < (int)X-1 && x < g_wx+1; x++) {
+      char type = type_at({x,y});
+      if (type == run.type) {
+        run.length++;
       } else {
-        uint16_t i = std::min(g_marker_count[y][x], max_symbol_idx);
-        bool has_water = i > 0;
-        if (!prev_water && has_water && !g_rainbow_enabled) {
-          buffer_appendz(buf, T_BLUE);
-        } else if (has_water && g_rainbow_enabled) {
-          char tmp[20];
-          int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
-          if (length < 0) {
-            die("sprintf");
-          }
-          buffer_append(buf, tmp, length);
-        } else if (prev_water && !has_water) {
-          buffer_appendz(buf, T_RESET);
-        }
-        buffer_appendz(buf, symbol[i]);
-        prev_water = has_water;
+        draw_run(run, {x,y}, buf);
+        run.type = type;
+        run.length = 1;
       }
     }
-    buffer_appendz(buf, T_RESET);
+    draw_run(run, {x,y}, buf);
     buffer_appendz(buf, "\x1b[K"); // clear remainer of line
     if (y > y_cutoff) {
       buffer_appendz(buf, "\r\n");

@@ -6,6 +6,8 @@ struct buffer {
 };
 
 void buffer_append(buffer* buf, const char* s, int len);
+void buffer_append_nchars(buffer* buf, char c, int count);
+void buffer_append_char(buffer* buf, char c);
 void buffer_free(buffer* buf);
 void buffer_write(buffer* buf);
 void buffer_clear(buffer* buf);

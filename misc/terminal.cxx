@@ -82,6 +82,20 @@ void buffer_append(buffer* buf, const char* s, int len) {
   buf->len += len;
 }
 
+void buffer_append_nchars(buffer* buf, char c, int count) {
+  char* data = (char*)realloc(buf->data, buf->len + count);
+  if (!data) {
+    die("failed to reallocate buffer");
+  }
+  memset(&data[buf->len], c, count);
+  buf->data = data;
+  buf->len += count;
+}
+
+void buffer_append_char(buffer* buf, char c) {
+  buffer_append_nchars(buf, c, 1);
+}
+
 void buffer_write(buffer* buf) {
   write(STDIN_FILENO, buf->data, buf->len);
 }
