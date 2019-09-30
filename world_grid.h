@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <utility>
 #include <vector>
 
 #include "index_calculator.h"
@@ -14,6 +15,8 @@ public:
   size_t height() const;
   size_t size() const;
 
+  void mark_fluid_as_old();
+
   void set_fluid(vec2zu index, bool value);
 
   void flag_as_fluid(vec2zu index);
@@ -21,6 +24,7 @@ public:
   void flag_as_source(vec2zu index);
   void flag_as_sink(vec2zu index);
 
+  bool was_fluid(vec2zu index) const;
   bool is_fluid(vec2zu index) const;
   bool is_solid(vec2zu index) const;
   bool is_source(vec2zu index) const;
@@ -30,6 +34,7 @@ public:
 
 private:
   IndexCalculator ic_;
+  std::vector<bool> old_fluid_;
   std::vector<bool> fluid_;
   std::vector<bool> solid_;
   std::vector<bool> source_;
@@ -42,6 +47,7 @@ inline WorldGrid::WorldGrid()
 
 inline WorldGrid::WorldGrid(size_t x, size_t y)
   : ic_(x, y)
+  , old_fluid_(ic_.size())
   , fluid_(ic_.size())
   , solid_(ic_.size())
   , source_(ic_.size())
@@ -58,6 +64,11 @@ inline size_t WorldGrid::height() const {
 
 inline size_t WorldGrid::size() const {
   return ic_.size();
+}
+
+// Invalidates is_fluid()
+inline void WorldGrid::mark_fluid_as_old() {
+  std::swap(fluid_, old_fluid_);
 }
 
 inline void WorldGrid::set_fluid(vec2zu index, bool value) {
@@ -82,6 +93,10 @@ inline void WorldGrid::flag_as_sink(vec2zu index) {
 
 inline bool WorldGrid::is_fluid(vec2zu index) const {
   return fluid_[ic_.to1d(index)];
+}
+
+inline bool WorldGrid::was_fluid(vec2zu index) const {
+  return old_fluid_[ic_.to1d(index)];
 }
 
 inline bool WorldGrid::is_solid(vec2zu index) const {

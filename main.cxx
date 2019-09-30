@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include <algorithm>
+#include <vector>
 
 #include "math/vec2f.h"
 #include "math/vec2zu.h"
@@ -92,11 +93,9 @@ struct sparse_entry_t {
 
 // marker particle data
 const size_t k_max_marker_count = UINT16_MAX;
-size_t g_markers_length;
+std::vector<vec2f> g_markers;
 bool g_source_exhausted;
-vec2f g_markers[k_max_marker_count];
 uint16_t g_marker_count[Y][X];
-uint16_t g_old_marker_count[Y][X];
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -109,31 +108,38 @@ float clampf(float min, float x, float max) {
 }
 
 void refresh_marker_counts() {
-  memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
-  memset(g_marker_count, '\0', sizeof(g_marker_count));
-  for (size_t i = 0; i < g_markers_length; ++i) {
+  memset(g_marker_count, 0, sizeof(g_marker_count));
+  for (size_t i = 0; i < g_markers.size(); ++i) {
     int x = (int)floorf(g_markers[i].x*k_inv_s);
     int y = (int)floorf(g_markers[i].y*k_inv_s);
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
       if (g_grid.is_sink({size_t(x),size_t(y)})) {
-        // remove marker by swapping with back and resizing
-        g_markers[i--] = g_markers[--g_markers_length];
+        g_markers[i] = g_markers.back();
+        g_markers.pop_back();
       } else {
         g_marker_count[y][x]++;
       }
     } else {
-      g_markers[i--] = g_markers[--g_markers_length];
+      g_markers[i] = g_markers.back();
+      g_markers.pop_back();
+    }
+  }
+
+  g_grid.mark_fluid_as_old();
+  for (size_t y = 0; y < Y; ++y) {
+    for (size_t x = 0; x < X; ++x) {
+      g_grid.set_fluid({x,y}, g_marker_count[y][x] > 0);
     }
   }
 }
 
 bool was_water(size_t y, size_t x) {
-  return g_old_marker_count[y][x] > 0;
+  return g_grid.was_fluid({x,y});
 }
 
 bool is_water(size_t y, size_t x) {
-  return g_marker_count[y][x] > 0;
+  return g_grid.is_fluid({x,y});
 }
 
 void extrapolate_u(float u[Y][X]) {
@@ -230,29 +236,36 @@ void colorize() {
   }
 }
 
+// Returns a float in the range [0,1)
 float randf() {
   static uint64_t rng_state = 0x9bd185c449534b91;
   uint32_t x = xorshift64_32star(&rng_state);
   return float(x / double(UINT32_MAX));
 }
 
+// Returns a pair of floats in the range [0,s)
+vec2f rand2f(float s) {
+  return s*vec2f(randf(), randf());
+}
+
+vec2f index_to_world(const vec2f& i) {
+  return k_s * i;
+}
+
 void sim_init(args_t in) {
   g_grid = WorldGrid::from_file(in.scenario_file, X, Y);
 
   // setup fluid markers, 4 per cell, jittered
-  size_t idx = 0;
-  for (size_t i = 0; i < X; ++i) {
-    for (size_t j = 0; j < Y; ++j) {
-      if (g_grid.is_fluid({i,j})) {
-        for (size_t k = 0; k < 4; ++k) {
-          float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
-          float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
-          g_markers[idx++] = k_s*vec2f{x,y};
-        }
+  for (size_t y = 0; y < g_grid.height(); ++y) {
+    for (size_t x = 0; x < g_grid.width(); ++x) {
+      if (g_grid.is_fluid(vec2zu(x,y))) {
+        g_markers.push_back(index_to_world(vec2f(x,      y)      + rand2f(0.5)));
+        g_markers.push_back(index_to_world(vec2f(x+0.5f, y)      + rand2f(0.5)));
+        g_markers.push_back(index_to_world(vec2f(x,      y+0.5f) + rand2f(0.5)));
+        g_markers.push_back(index_to_world(vec2f(x+0.5f, y+0.5f) + rand2f(0.5)));
       }
     }
   }
-  g_markers_length = idx;
   refresh_marker_counts();
 
   // setup color
@@ -266,16 +279,16 @@ void update_fluid_sources() {
   // The current extrapolation implementation assumes that the fluid is never
   // more than one cell from a cell where fluid was in the previous step. If
   // we stop and then later restart generating fluid, that may not hold true.
-  g_source_exhausted |= (g_markers_length == k_max_marker_count-1);
+  g_source_exhausted |= (g_markers.size() == k_max_marker_count);
 
   float t = 0.6f / k_source_color_period * g_frame_count;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (g_grid.is_source({x,y})) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
-          g_markers[g_markers_length++] = k_s*vec2f{x+randf(), y+randf()};
+          g_markers.push_back(index_to_world(vec2f(x+randf(), y+randf())));
           g_marker_count[y][x]++;
-          g_source_exhausted |= (g_markers_length == k_max_marker_count-1);
+          g_source_exhausted |= (g_markers.size() == k_max_marker_count);
         }
         g_r[y][x] = hsv_basis(t + 2.f);
         g_g[y][x] = hsv_basis(t);
@@ -523,7 +536,7 @@ float time_to(vec2f p0, vec2f p1, vec2f v, int axis) {
 // Collision detection was developed ad-hoc, but I should probably read
 // A Fast Voxel Traversal Algorithm for Ray Tracing (1987)
 void advect_markers(float dt) {
-  for (size_t i = 0; i < g_markers_length; ++i) {
+  for (size_t i = 0; i < g_markers.size(); ++i) {
     vec2f p = g_markers[i];
     vec2f v = velocity_at(p);
     vec2f np;
