@@ -992,7 +992,7 @@ void buffer_appendz(buffer* buf, const char* s) {
   buffer_append(buf, s, strlen(s));
 }
 
-void draw_rows(struct buffer* buf) {
+void draw_rows(buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint16_t max_symbol_idx = 3;
   const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
