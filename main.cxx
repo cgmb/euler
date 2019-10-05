@@ -16,6 +16,7 @@
 #include "misc/terminal.h"
 #include "misc/file.h"
 #include "misc/rng.h"
+#include "misc/dynarray2d.h"
 #include "world_grid.h"
 
 // simulation size
@@ -40,10 +41,8 @@ const float k_g = -10.f; // gravity
 
 // All arrays are the same size so functions like bilinear interpolation can
 // work on any array. The real size is smaller and is listed in the comments.
-float g_u[Y][X]; // [Y][X-1]
-float g_v[Y][X]; // [Y-1][X]
-float g_utmp[Y][X]; // [Y][X-1]
-float g_vtmp[Y][X]; // [Y-1][X]
+dynarray2d<float> g_u(X,Y); // [Y][X-1]
+dynarray2d<float> g_v(X,Y); // [Y-1][X]
 
 // grid cell properties from the scenario file
 WorldGrid  g_grid;
@@ -70,12 +69,9 @@ float hsv_basis(float t) {
 
 // color data
 bool g_rainbow_enabled;
-float g_r[Y][X];
-float g_g[Y][X];
-float g_b[Y][X];
-float g_rtmp[Y][X];
-float g_gtmp[Y][X];
-float g_btmp[Y][X];
+dynarray2d<float> g_r(X,Y);
+dynarray2d<float> g_g(X,Y);
+dynarray2d<float> g_b(X,Y);
 const float k_source_color_period = 10.f; // seconds
 const float k_initial_color_period = 60.f; // grid cells
 
@@ -89,13 +85,15 @@ struct sparse_entry_t {
   int8_t a_diag;
   int8_t a_plus_i;
   int8_t a_plus_j;
-} g_a[Y][X];
+};
+
+dynarray2d<sparse_entry_t> g_a(X,Y);
 
 // marker particle data
 const size_t k_max_marker_count = UINT16_MAX;
 std::vector<vec2f> g_markers;
 bool g_source_exhausted;
-uint16_t g_marker_count[Y][X];
+dynarray2d<uint16_t> g_marker_count(X,Y);
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -108,17 +106,18 @@ float clampf(float min, float x, float max) {
 }
 
 void refresh_marker_counts() {
-  memset(g_marker_count, 0, sizeof(g_marker_count));
+  g_marker_count.fill(0);
   for (size_t i = 0; i < g_markers.size(); ++i) {
     int x = (int)floorf(g_markers[i].x*k_inv_s);
     int y = (int)floorf(g_markers[i].y*k_inv_s);
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
-      if (g_grid.is_sink({size_t(x),size_t(y)})) {
+      vec2zu index(x,y);
+      if (g_grid.is_sink(index)) {
         g_markers[i] = g_markers.back();
         g_markers.pop_back();
       } else {
-        g_marker_count[y][x]++;
+        g_marker_count[index]++;
       }
     } else {
       g_markers[i] = g_markers.back();
@@ -129,7 +128,7 @@ void refresh_marker_counts() {
   g_grid.mark_fluid_as_old();
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      g_grid.set_fluid({x,y}, g_marker_count[y][x] > 0);
+      g_grid.set_fluid({x,y}, g_marker_count[{x,y}] > 0);
     }
   }
 }
@@ -142,7 +141,7 @@ bool is_water(size_t y, size_t x) {
   return g_grid.is_fluid({x,y});
 }
 
-void extrapolate_u(float u[Y][X]) {
+void extrapolate_u(dynarray2d<float>& u) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       bool was_invalid = !was_water(y,x) && !was_water(y,x+1);
@@ -156,19 +155,19 @@ void extrapolate_u(float u[Y][X]) {
         for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
           for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
             if (was_water(y_u,x_u) || was_water(y_u,x_u+1)) {
-              total += u[y_u][x_u];
+              total += u[{x_u,y_u}];
               count++;
             }
           }
         }
         assert(count > 0);
-        u[y][x] = total / count;
+        u[{x,y}] = total / count;
       }
     }
   }
 }
 
-void extrapolate_v(float v[Y][X]) {
+void extrapolate_v(dynarray2d<float>& v) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       bool was_invalid = !was_water(y,x) && !was_water(y+1,x);
@@ -182,19 +181,19 @@ void extrapolate_v(float v[Y][X]) {
         for (size_t y_v = y_lower; y_v <= y_upper; ++y_v) {
           for (size_t x_v = x_lower; x_v <= x_upper; ++x_v) {
             if (was_water(y_v,x_v) || was_water(y_v+1,x_v)) {
-              total += v[y_v][x_v];
+              total += v[{x_v,y_v}];
               count++;
             }
           }
         }
         assert(count > 0);
-        v[y][x] = total / count;
+        v[{x,y}] = total / count;
       }
     }
   }
 }
 
-void extrapolate_p(float q[Y][X]) {
+void extrapolate_p(dynarray2d<float>& q) {
   // extrapolate a quantity sampled in the pressure cell
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
@@ -208,13 +207,13 @@ void extrapolate_p(float q[Y][X]) {
         for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
           for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
             if (was_water(y_u,x_u)) {
-              total += q[y_u][x_u];
+              total += q[{x_u,y_u}];
               count++;
             }
           }
         }
         assert(count > 0);
-        q[y][x] = total / count;
+        q[{x,y}] = total / count;
       }
     }
   }
@@ -228,9 +227,9 @@ void colorize() {
         if (!g_grid.is_source({x,y})) {
           t = (x + y) * 6.f / k_initial_color_period;
         }
-        g_r[y][x] = hsv_basis(t + 2.f);
-        g_g[y][x] = hsv_basis(t);
-        g_b[y][x] = hsv_basis(t - 2.f);
+        g_r[{x,y}] = hsv_basis(t + 2.f);
+        g_g[{x,y}] = hsv_basis(t);
+        g_b[{x,y}] = hsv_basis(t - 2.f);
       }
     }
   }
@@ -285,25 +284,36 @@ void update_fluid_sources() {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (g_grid.is_source({x,y})) {
-        if (!g_source_exhausted && g_marker_count[y][x] < 4) {
+        if (!g_source_exhausted && g_marker_count[{x,y}] < 4) {
           g_markers.push_back(index_to_world(vec2f(x+randf(), y+randf())));
-          g_marker_count[y][x]++;
+          g_marker_count[{x,y}]++;
           g_source_exhausted |= (g_markers.size() == k_max_marker_count);
         }
-        g_r[y][x] = hsv_basis(t + 2.f);
-        g_g[y][x] = hsv_basis(t);
-        g_b[y][x] = hsv_basis(t - 2.f);
+        g_r[{x,y}] = hsv_basis(t + 2.f);
+        g_g[{x,y}] = hsv_basis(t);
+        g_b[{x,y}] = hsv_basis(t - 2.f);
       }
     }
   }
 }
 
-float bilinear(bool w[2][2], float q[Y][X],
+float bilinear(bool w[2][2], const dynarray2d<float>& q,
     float x_frac, int x_floori, int x_ceili,
     float y_frac, int y_floori, int y_ceili) {
   // uses bilinear interpolation to combine up to four samples from q
   // at least one sample must be valid, as specified by w
   assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
+  assert(x_frac >= 0 && x_frac <= 1);
+  assert(y_frac >= 0 && y_frac <= 1);
+  assert(x_floori >= 0);
+  assert(x_ceili >= 0);
+  assert(y_floori >= 0);
+  assert(y_ceili >= 0);
+
+  const size_t x_floor = size_t(x_floori);
+  const size_t y_floor = size_t(y_floori);
+  const size_t x_ceil = size_t(x_ceili);
+  const size_t y_ceil = size_t(y_ceili);
 
   // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
   // are out of water, but the x interpolation will take care of that.
@@ -315,7 +325,7 @@ float bilinear(bool w[2][2], float q[Y][X],
   } else {
     y1_frac = y_frac;
   }
-  float y1_mid = (1-y1_frac)*q[y_floori][x_floori] + y1_frac*q[y_ceili][x_floori];
+  float y1_mid = (1-y1_frac)*q[{x_floor,y_floor}] + y1_frac*q[{x_floor,y_ceil}];
 
   float y2_frac;
   if (!w[0][1]) {
@@ -325,7 +335,7 @@ float bilinear(bool w[2][2], float q[Y][X],
   } else {
     y2_frac = y_frac;
   }
-  float y2_mid = (1-y2_frac)*q[y_floori][x_ceili] + y2_frac*q[y_ceili][x_ceili];
+  float y2_mid = (1-y2_frac)*q[{x_ceil,y_floor}] + y2_frac*q[{x_ceil,y_ceil}];
 
   float x0_frac;
   if (!w[0][0] && !w[1][0]) {
@@ -338,7 +348,7 @@ float bilinear(bool w[2][2], float q[Y][X],
   return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
 }
 
-float interpolate_u(float u[Y][X], float y, float x) {
+float interpolate_u(const dynarray2d<float>& u, float y, float x) {
   // bilinear interpolation
   x = clampf(0, x, X-2);
   y = clampf(0, y, Y-1);
@@ -364,7 +374,7 @@ float interpolate_u(float u[Y][X], float y, float x) {
   return bilinear(w, u, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-float interpolate_v(float v[Y][X], float y, float x) {
+float interpolate_v(const dynarray2d<float>& v, float y, float x) {
   // bilinear interpolation
   x = clampf(0, x, X-1);
   y = clampf(0, y, Y-2);
@@ -390,7 +400,7 @@ float interpolate_v(float v[Y][X], float y, float x) {
   return bilinear(w, v, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-float interpolate_p(float q[Y][X], float y, float x) {
+float interpolate_p(const dynarray2d<float>& q, float y, float x) {
   // bilinear interpolation
   x = clampf(0, x, X-1);
   y = clampf(0, y, Y-1);
@@ -416,11 +426,11 @@ float interpolate_p(float q[Y][X], float y, float x) {
   return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+void advect_u(const dynarray2d<float>& u, const dynarray2d<float>& v, float dt, dynarray2d<float>& out) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       if (is_water(y,x) || is_water(y,x+1)) {
-        float dx = u[y][x];
+        float dx = u[{x,y}];
         // we could check if either of the two squares around each
         // vertical component is water, but that would mean checking
         // four squares instead of two, and doing bounds checks.
@@ -429,18 +439,18 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
         float div = 0.f;
         float vv[4] = {};
         if (is_water(y,x)) {
-          vv[0] = v[y][x];
+          vv[0] = v[{x,y}];
           div += 1.f;
           if (y > 0) {
-            vv[1] = v[y-1][x];
+            vv[1] = v[{x,y-1}];
             div += 1.f;
           }
         }
         if (is_water(y,x+1)) {
-          vv[2] = v[y][x+1];
+          vv[2] = v[{x+1,y}];
           div += 1.f;
           if (y > 0) {
-            vv[3] = v[y-1][x+1];
+            vv[3] = v[{x+1,y-1}];
             div += 1.f;
           }
         }
@@ -448,17 +458,17 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
         float prev_x = x - dx*dt*k_inv_s;
         float prev_y = y - dy*dt*k_inv_s;
 
-        out[y][x] = interpolate_u(g_u, prev_y, prev_x);
+        out[{x,y}] = interpolate_u(g_u, prev_y, prev_x);
       }
     }
   }
 }
 
-void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+void advect_v(const dynarray2d<float>& u, const dynarray2d<float>& v, float dt, dynarray2d<float>& out) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x) || is_water(y+1,x)) {
-        float dy = v[y][x];
+        float dy = v[{x,y}];
         // we could check if either of the two squares around each
         // horizontal component is water, but that would mean checking
         // four squares instead of two, and doing bounds checks.
@@ -467,18 +477,18 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
         float div = 0.f;
         float uu[4] = {};
         if (is_water(y,x)) {
-          uu[0] = u[y][x];
+          uu[0] = u[{x,y}];
           div += 1.f;
           if (x > 0) {
-            uu[1] = u[y][x-1];
+            uu[1] = u[{x-1,y}];
             div += 1.f;
           }
         }
         if (is_water(y+1,x)) {
-          uu[2] = u[y+1][x];
+          uu[2] = u[{x,y+1}];
           div += 1.f;
           if (x > 0) {
-            uu[3] = u[y+1][x-1];
+            uu[3] = u[{x-1,y+1}];
             div += 1.f;
           }
         }
@@ -486,24 +496,24 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
         float prev_x = x - dx*dt*k_inv_s;
         float prev_y = y - dy*dt*k_inv_s;
 
-        out[y][x] = interpolate_v(g_v, prev_y, prev_x);
+        out[{x,y}] = interpolate_v(g_v, prev_y, prev_x);
       }
     }
   }
 }
 
-void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
+void advect_p(const dynarray2d<float>& q, const dynarray2d<float>& u, const dynarray2d<float>& v, float dt, dynarray2d<float>& out) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x)) {
         // let's assume we're never advecting something on the grid boundary,
         // as my pressure solve doesn't check those bounds either
-        float dy = (v[y][x] + v[y-1][x]) / 2;
-        float dx = (u[y][x] + u[y][x-1]) / 2;
+        float dy = (v[{x,y}] + v[{x,y-1}]) / 2;
+        float dx = (u[{x,y}] + u[{x-1,y}]) / 2;
         float prev_x = x - dx*dt*k_inv_s;
         float prev_y = y - dy*dt*k_inv_s;
 
-        out[y][x] = interpolate_p(q, prev_y, prev_x);
+        out[{x,y}] = interpolate_p(q, prev_y, prev_x);
       }
     }
   }
@@ -613,10 +623,10 @@ void advect_markers(float dt) {
   }
 }
 
-void apply_body_forces(float v[Y][X], float dt) {
+void apply_body_forces(dynarray2d<float>& v, float dt) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      v[y][x] += k_g * dt;
+      v[{x,y}] += k_g * dt;
     }
   }
 }
@@ -629,21 +639,21 @@ int8_t nonsolid_neighbor_count(size_t y, size_t x) {
 }
 
 int8_t get_a_minus_i(size_t y, size_t x) {
-  return x>0 ? g_a[y][x-1].a_plus_i : 0;
+  return x>0 ? g_a[{x-1,y}].a_plus_i : 0;
 }
 
 int8_t get_a_minus_j(size_t y, size_t x) {
-  return y>0 ? g_a[y-1][x].a_plus_j : 0;
+  return y>0 ? g_a[{x,y-1}].a_plus_j : 0;
 }
 
 double sq(double x) {
   return x*x;
 }
 
-double g_precon[Y][X];
-double g_q[Y][X];
+dynarray2d<double> g_precon(X,Y);
+dynarray2d<double> g_q(X,Y);
 
-void apply_preconditioner(double r[Y][X], double z[Y][X]) {
+void apply_preconditioner(const dynarray2d<double>& r, dynarray2d<double>& z) {
   // Incomplete Cholesky
   // A ~= LLᵀ
   // L = F * E_inv + E
@@ -652,63 +662,63 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        double a = g_a[y][x].a_diag;
-        double b = sq(get_a_minus_i(y,x) * g_precon[y][x-1]);
-        double c = sq(get_a_minus_j(y,x) * g_precon[y-1][x]);
+        double a = g_a[{x,y}].a_diag;
+        double b = sq(get_a_minus_i(y,x) * g_precon[{x-1,y}]);
+        double c = sq(get_a_minus_j(y,x) * g_precon[{x,y-1}]);
 
         double e = a - b - c;
         if (e < 0.25*a) {
           e = a != 0 ? a : 1;
         }
-        g_precon[y][x] = 1 / sqrt(e);
+        g_precon[{x,y}] = 1 / sqrt(e);
       }
     }
   }
 
   // solve Lq = r
-  memset(g_q, '\0', sizeof(double)*Y*X);
+  g_q.fill(0);
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        double t = r[y][x]
-          - g_a[y][x-1].a_plus_i * g_precon[y][x-1] * g_q[y][x-1]
-          - g_a[y-1][x].a_plus_j * g_precon[y-1][x] * g_q[y-1][x];
-        g_q[y][x] = t * g_precon[y][x];
+        double t = r[{x,y}]
+          - g_a[{x-1,y}].a_plus_i * g_precon[{x-1,y}] * g_q[{x-1,y}]
+          - g_a[{x,y-1}].a_plus_j * g_precon[{x,y-1}] * g_q[{x,y-1}];
+        g_q[{x,y}] = t * g_precon[{x,y}];
       }
     }
   }
 
   // solve Lᵀz = q
-  memset(z, '\0', sizeof(double)*Y*X);
+  z.fill(0);
   for (size_t y = Y; y--;) {
     for (size_t x = X; x--;) {
       if (is_water(y, x)) {
-        double t = g_q[y][x]
-          - g_a[y][x].a_plus_i * g_precon[y][x] * z[y][x+1]
-          - g_a[y][x].a_plus_j * g_precon[y][x] * z[y+1][x];
-        z[y][x] = t * g_precon[y][x];
+        double t = g_q[{x,y}]
+          - g_a[{x,y}].a_plus_i * g_precon[{x,y}] * z[{x+1,y}]
+          - g_a[{x,y}].a_plus_j * g_precon[{x,y}] * z[{x,y+1}];
+        z[{x,y}] = t * g_precon[{x,y}];
       }
     }
   }
 }
 
-double dot(double a[Y][X], double b[Y][X]) {
+double dot(const dynarray2d<double>& a, const dynarray2d<double>& b) {
   double total = 0.f;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        total += a[y][x] * b[y][x];
+        total += a[{x,y}] * b[{x,y}];
       }
     }
   }
   return total;
 }
 
-bool all_zero(double r[Y][X]) {
+bool all_zero(const dynarray2d<double>& r) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        if (r[y][x] != 0.f) {
+        if (r[{x,y}] != 0.f) {
           return false;
         }
       }
@@ -717,12 +727,12 @@ bool all_zero(double r[Y][X]) {
   return true;
 }
 
-double inf_norm(double r[Y][X]) {
+double inf_norm(const dynarray2d<double>& r) {
   double maximum = 0.f;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        double a = fabs(r[y][x]);
+        double a = fabs(r[{x,y}]);
         if (a > maximum) {
           maximum = a;
         }
@@ -732,52 +742,52 @@ double inf_norm(double r[Y][X]) {
   return maximum;
 }
 
-void update_search(double s[Y][X], double z[Y][X], double beta) {
+void update_search(dynarray2d<double>& s, const dynarray2d<double>& z, double beta) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        s[y][x] = z[y][x] + beta * s[y][x];
+        s[{x,y}] = z[{x,y}] + beta * s[{x,y}];
       }
     }
   }
 }
 
-void apply_a(double s[Y][X], double out[Y][X]) {
+void apply_a(const dynarray2d<double>& s, dynarray2d<double>& out) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        out[y][x] = g_a[y][x].a_diag * s[y][x]
-                  + g_a[y][x].a_plus_i * (x+1 < X && is_water(y,x+1) ? s[y][x+1] : 0)
-                  + g_a[y][x].a_plus_j * (y+1 < Y && is_water(y+1,x) ? s[y+1][x] : 0)
-                  + get_a_minus_i(y,x) * (x>0 && is_water(y,x-1) ? s[y][x-1] : 0)
-                  + get_a_minus_j(y,x) * (y>0 && is_water(y-1,x) ? s[y-1][x] : 0);
+        out[{x,y}] = g_a[{x,y}].a_diag * s[{x,y}]
+                  + g_a[{x,y}].a_plus_i * (x+1 < X && is_water(y,x+1) ? s[{x+1,y}] : 0)
+                  + g_a[{x,y}].a_plus_j * (y+1 < Y && is_water(y+1,x) ? s[{x,y+1}] : 0)
+                  + get_a_minus_i(y,x) * (x>0 && is_water(y,x-1) ? s[{x-1,y}] : 0)
+                  + get_a_minus_j(y,x) * (y>0 && is_water(y-1,x) ? s[{x,y-1}] : 0);
       }
     }
   }
 }
 
 // c += a*b
-void fmadd(double a[Y][X], double b, double c[Y][X]) {
+void fmadd(const dynarray2d<double>& a, double b, dynarray2d<double>& c) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        c[y][x] += a[y][x] * b;
+        c[{x,y}] += a[{x,y}] * b;
       }
     }
   }
 }
 
-void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
+void project(float dt, const dynarray2d<float>& u, const dynarray2d<float>& v, dynarray2d<float>& uout, dynarray2d<float>& vout) {
   const double c = -k_d*k_s*k_s / dt; // -density * dt^2 / dt
-  double d0[Y][X] = {}; // divergence * c
+  dynarray2d<double> d0(X,Y); // divergence * c
 
   // calculate d0
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x)) {
-        float up = x>0 ? u[y][x-1] : 0;
-        float vp = y>0 ? v[y-1][x] : 0;
-        d0[y][x] = c * k_inv_s * (u[y][x] - up + v[y][x] - vp);
+        float up = x>0 ? u[{x-1,y}] : 0;
+        float vp = y>0 ? v[{x,y-1}] : 0;
+        d0[{x,y}] = c * k_inv_s * (u[{x,y}] - up + v[{x,y}] - vp);
       }
     }
   }
@@ -786,9 +796,9 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        g_a[y][x].a_diag = nonsolid_neighbor_count(y, x);
-        g_a[y][x].a_plus_i = x<X-1 && is_water(y,x+1) ? -1 : 0;
-        g_a[y][x].a_plus_j = y<Y-1 && is_water(y+1,x) ? -1 : 0;
+        g_a[{x,y}].a_diag = nonsolid_neighbor_count(y, x);
+        g_a[{x,y}].a_plus_i = x<X-1 && is_water(y,x+1) ? -1 : 0;
+        g_a[{x,y}].a_plus_j = y<Y-1 && is_water(y+1,x) ? -1 : 0;
       }
     }
   }
@@ -797,14 +807,12 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   const double tol = 1e-6f;
 
   // conjugate gradient
-  double p[Y][X] = {}; // pressure guess
-  double r[Y][X];      // residual
-  memcpy(r, d0, sizeof(r));
+  dynarray2d<double> p(X,Y);    // pressure guess
+  dynarray2d<double> r = d0;    // residual
   if (!all_zero(r)) {
-    double z[Y][X];      // auxiliary vector
+    dynarray2d<double> z(X,Y);  // auxiliary vector
     apply_preconditioner(r, z);
-    double s[Y][X];      // search vector
-    memcpy(s, z, sizeof(s));
+    dynarray2d<double> s = z;   // search vector
 
     double sigma = dot(z,r);
     for (size_t i = 0; i < max_iterations; ++i) {
@@ -833,8 +841,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // to eliminate divergence at solid boundaries, causing extreme stickyness
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      if (is_water(y,x) && p[y][x] < 0.f) {
-        p[y][x] = 0.f;
+      if (is_water(y,x) && p[{x,y}] < 0.f) {
+        p[{x,y}] = 0.f;
       }
     }
   }
@@ -843,11 +851,11 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       if (g_grid.is_solid({x,y}) || g_grid.is_solid({x+1,y})) {
-        uout[y][x] = 0.f;
+        uout[{x,y}] = 0.f;
       } else if (is_water(y,x) || is_water(y,x+1)) {
-        uout[y][x] = u[y][x] - k_inv_d * k_inv_s * dt * (p[y][x+1] - p[y][x]);
+        uout[{x,y}] = u[{x,y}] - k_inv_d * k_inv_s * dt * (p[{x+1,y}] - p[{x,y}]);
       } else { // both cells are air
-        uout[y][x] = 0.f;
+        uout[{x,y}] = 0.f;
       }
     }
   }
@@ -856,21 +864,21 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (g_grid.is_solid({x,y}) || g_grid.is_solid({x,y+1})) {
-        vout[y][x] = 0.f;
+        vout[{x,y}] = 0.f;
       } else if (is_water(y,x) || is_water(y+1,x)) {
-        vout[y][x] = v[y][x] - k_inv_d * k_inv_s * dt * (p[y+1][x] - p[y][x]);
+        vout[{x,y}] = v[{x,y}] - k_inv_d * k_inv_s * dt * (p[{x,y+1}] - p[{x,y}]);
       } else { // both cells are air
-        vout[y][x] = 0.f;
+        vout[{x,y}] = 0.f;
       }
     }
   }
 }
 
-float maxabs_u(float q[Y][X]) {
+float maxabs_u(const dynarray2d<float>& q) {
   float max = 0;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
-      float value = fabsf(q[y][x]);
+      float value = fabsf(q[{x,y}]);
       if (value > max) {
         max = value;
       }
@@ -879,11 +887,11 @@ float maxabs_u(float q[Y][X]) {
   return max;
 }
 
-float maxabs_v(float q[Y][X]) {
+float maxabs_v(const dynarray2d<float>& q) {
   float max = 0;
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
-      float value = fabsf(q[y][x]);
+      float value = fabsf(q[{x,y}]);
       if (value > max) {
         max = value;
       }
@@ -892,25 +900,25 @@ float maxabs_v(float q[Y][X]) {
   return max;
 }
 
-void zero_bounds_u(float u[Y][X]) {
+void zero_bounds_u(dynarray2d<float>& u) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
       bool is_air = !is_water(y,x) && !is_water(y,x+1);
       if (is_air || g_grid.is_solid({x,y}) || g_grid.is_solid({x+1,y})) {
-        u[y][x] = 0.f;
+        u[{x,y}] = 0.f;
       }
     }
   }
 }
 
-void zero_bounds_v(float v[Y][X]) {
+void zero_bounds_v(dynarray2d<float>& v) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
       bool is_air = !is_water(y,x) && !is_water(y+1,x);
       if (is_air || g_grid.is_solid({x,y}) || g_grid.is_solid({x,y+1})) {
-        v[y][x] = 0.f;
+        v[{x,y}] = 0.f;
       }
     }
   }
@@ -958,24 +966,32 @@ void sim_step() {
     zero_bounds_u(g_u);
     zero_bounds_v(g_v);
 
-    advect_u(g_u, g_v, dt, g_utmp);
-    advect_v(g_u, g_v, dt, g_vtmp);
+    dynarray2d<float> utmp(g_u.dimensions());
+    dynarray2d<float> vtmp(g_v.dimensions());
+
+    advect_u(g_u, g_v, dt, utmp);
+    advect_v(g_u, g_v, dt, vtmp);
+
     if (g_rainbow_enabled) {
-      advect_p(g_r, g_u, g_v, dt, g_rtmp);
-      memcpy(g_r, g_rtmp, sizeof(g_r));
+      dynarray2d<float> rtmp(g_r.dimensions());
+      dynarray2d<float> gtmp(g_g.dimensions());
+      dynarray2d<float> btmp(g_b.dimensions());
 
-      advect_p(g_g, g_u, g_v, dt, g_gtmp);
-      memcpy(g_g, g_gtmp, sizeof(g_g));
+      advect_p(g_r, g_u, g_v, dt, rtmp);
+      g_r = rtmp;
 
-      advect_p(g_b, g_u, g_v, dt, g_btmp);
-      memcpy(g_b, g_btmp, sizeof(g_b));
+      advect_p(g_g, g_u, g_v, dt, gtmp);
+      g_g = gtmp;
+
+      advect_p(g_b, g_u, g_v, dt, btmp);
+      g_b = btmp;
     }
-    apply_body_forces(g_vtmp, dt);
+    apply_body_forces(vtmp, dt);
 
-    zero_bounds_u(g_utmp);
-    zero_bounds_v(g_vtmp);
+    zero_bounds_u(utmp);
+    zero_bounds_v(vtmp);
 
-    project(dt, g_utmp, g_vtmp, g_u, g_v);
+    project(dt, utmp, vtmp, g_u, g_v);
   } while (frame_time > 0.f);
 
   if (g_simulate_steps) {
@@ -1036,13 +1052,13 @@ void draw_fluid(const vec2zu& end, int count, buffer* buf) {
   for (size_t x = end.x - count; x < end.x; x++) {
     if (g_rainbow_enabled) {
       char tmp[20];
-      int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
+      int length = sprint_color_code(tmp, g_r[{x,y}], g_g[{x,y}], g_b[{x,y}]);
       if (length < 0) {
         die("sprintf");
       }
       buffer_append(buf, tmp, length);
     }
-    buffer_append_char(buf, symbol[mini(g_marker_count[y][x]-1, 2)]);
+    buffer_append_char(buf, symbol[mini(g_marker_count[{x,y}]-1, 2)]);
   }
   buffer_appendz(buf, T_RESET);
 }
