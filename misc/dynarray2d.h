@@ -118,7 +118,7 @@ template <class T>
 void dynarray2d<T>::resize(size_t x, size_t y) {
   width_ = x;
   height_ = y;
-  resize(x*y);
+  base::resize(x*y);
 }
 
 template <class T>
