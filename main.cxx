@@ -15,6 +15,7 @@
 #include "math/vec2zu.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
+#include "misc/int.h"
 #include "misc/rng.h"
 #include "misc/dynarray2d.h"
 #include "world_grid.h"
@@ -90,10 +91,10 @@ struct sparse_entry_t {
 dynarray2d<sparse_entry_t> g_a(X,Y);
 
 // marker particle data
-const size_t k_max_marker_count = UINT16_MAX;
+const size_t k_max_marker_count = INT16_MAX;
 std::vector<vec2f> g_markers;
 bool g_source_exhausted;
-dynarray2d<uint16_t> g_marker_count(X,Y);
+dynarray2d<u8> g_marker_count(X,Y);
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -106,7 +107,7 @@ float clampf(float min, float x, float max) {
 }
 
 void refresh_marker_counts() {
-  g_marker_count.fill(0);
+  g_marker_count.fill(u8(0));
   for (size_t i = 0; i < g_markers.size(); ++i) {
     int x = (int)floorf(g_markers[i].x*k_inv_s);
     int y = (int)floorf(g_markers[i].y*k_inv_s);
@@ -117,7 +118,12 @@ void refresh_marker_counts() {
         g_markers[i] = g_markers.back();
         g_markers.pop_back();
       } else {
-        g_marker_count[index]++;
+        if (g_marker_count[index] < 16) {
+          g_marker_count[index]++;
+        } else {
+          g_markers[i] = g_markers.back();
+          g_markers.pop_back();
+        }
       }
     } else {
       g_markers[i] = g_markers.back();
