@@ -30,7 +30,7 @@ public:
   bool is_source(vec2zu index) const;
   bool is_sink(vec2zu index) const;
 
-  static WorldGrid from_file(const char* filename, size_t X, size_t Y);
+  static WorldGrid from_file(const char* filename);
 
 private:
   IndexCalculator ic_;

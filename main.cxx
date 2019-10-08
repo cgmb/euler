@@ -21,8 +21,8 @@
 #include "world_grid.h"
 
 // simulation size
-const size_t X = 100;
-const size_t Y = 40;
+size_t X;
+size_t Y;
 
 // display size
 int g_wx;
@@ -42,8 +42,8 @@ const float k_g = -10.f; // gravity
 
 // All arrays are the same size so functions like bilinear interpolation can
 // work on any array. The real size is smaller and is listed in the comments.
-dynarray2d<float> g_u(X,Y); // [Y][X-1]
-dynarray2d<float> g_v(X,Y); // [Y-1][X]
+dynarray2d<float> g_u; // [Y][X-1]
+dynarray2d<float> g_v; // [Y-1][X]
 
 // grid cell properties from the scenario file
 WorldGrid  g_grid;
@@ -70,9 +70,9 @@ float hsv_basis(float t) {
 
 // color data
 bool g_rainbow_enabled;
-dynarray2d<float> g_r(X,Y);
-dynarray2d<float> g_g(X,Y);
-dynarray2d<float> g_b(X,Y);
+dynarray2d<float> g_r;
+dynarray2d<float> g_g;
+dynarray2d<float> g_b;
 const float k_source_color_period = 10.f; // seconds
 const float k_initial_color_period = 60.f; // grid cells
 
@@ -88,13 +88,13 @@ struct sparse_entry_t {
   int8_t a_plus_j;
 };
 
-dynarray2d<sparse_entry_t> g_a(X,Y);
+dynarray2d<sparse_entry_t> g_a;
 
 // marker particle data
 const size_t k_max_marker_count = INT16_MAX;
 std::vector<vec2f> g_markers;
 bool g_source_exhausted;
-dynarray2d<u8> g_marker_count(X,Y);
+dynarray2d<u8> g_marker_count;
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -258,7 +258,16 @@ vec2f index_to_world(const vec2f& i) {
 }
 
 void sim_init(args_t in) {
-  g_grid = WorldGrid::from_file(in.scenario_file, X, Y);
+  g_grid = WorldGrid::from_file(in.scenario_file);
+  X = g_grid.width();
+  Y = g_grid.height();
+  g_u.resize(X,Y);
+  g_v.resize(X,Y);
+  g_marker_count.resize(X,Y);
+  g_a.resize(X,Y);
+  g_r.resize(X,Y);
+  g_g.resize(X,Y);
+  g_b.resize(X,Y);
 
   // setup fluid markers, 4 per cell, jittered
   for (size_t y = 0; y < g_grid.height(); ++y) {
@@ -656,40 +665,38 @@ double sq(double x) {
   return x*x;
 }
 
-dynarray2d<double> g_precon(X,Y);
-dynarray2d<double> g_q(X,Y);
-
 void apply_preconditioner(const dynarray2d<double>& r, dynarray2d<double>& z) {
   // Incomplete Cholesky
   // A ~= LLᵀ
   // L = F * E_inv + E
 
   // calculate E_inv (precon)
+  dynarray2d<double> precon(X,Y);
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         double a = g_a[{x,y}].a_diag;
-        double b = sq(get_a_minus_i(y,x) * g_precon[{x-1,y}]);
-        double c = sq(get_a_minus_j(y,x) * g_precon[{x,y-1}]);
+        double b = sq(get_a_minus_i(y,x) * precon[{x-1,y}]);
+        double c = sq(get_a_minus_j(y,x) * precon[{x,y-1}]);
 
         double e = a - b - c;
         if (e < 0.25*a) {
           e = a != 0 ? a : 1;
         }
-        g_precon[{x,y}] = 1 / sqrt(e);
+        precon[{x,y}] = 1 / sqrt(e);
       }
     }
   }
 
   // solve Lq = r
-  g_q.fill(0);
+  dynarray2d<double> q(X,Y);
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         double t = r[{x,y}]
-          - g_a[{x-1,y}].a_plus_i * g_precon[{x-1,y}] * g_q[{x-1,y}]
-          - g_a[{x,y-1}].a_plus_j * g_precon[{x,y-1}] * g_q[{x,y-1}];
-        g_q[{x,y}] = t * g_precon[{x,y}];
+          - g_a[{x-1,y}].a_plus_i * precon[{x-1,y}] * q[{x-1,y}]
+          - g_a[{x,y-1}].a_plus_j * precon[{x,y-1}] * q[{x,y-1}];
+        q[{x,y}] = t * precon[{x,y}];
       }
     }
   }
@@ -699,10 +706,10 @@ void apply_preconditioner(const dynarray2d<double>& r, dynarray2d<double>& z) {
   for (size_t y = Y; y--;) {
     for (size_t x = X; x--;) {
       if (is_water(y, x)) {
-        double t = g_q[{x,y}]
-          - g_a[{x,y}].a_plus_i * g_precon[{x,y}] * z[{x+1,y}]
-          - g_a[{x,y}].a_plus_j * g_precon[{x,y}] * z[{x,y+1}];
-        z[{x,y}] = t * g_precon[{x,y}];
+        double t = q[{x,y}]
+          - g_a[{x,y}].a_plus_i * precon[{x,y}] * z[{x+1,y}]
+          - g_a[{x,y}].a_plus_j * precon[{x,y}] * z[{x,y+1}];
+        z[{x,y}] = t * precon[{x,y}];
       }
     }
   }

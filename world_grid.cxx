@@ -4,7 +4,7 @@
 #include "world_grid.h"
 #include "misc/file.h"
 
-WorldGrid WorldGrid::from_file(const char* filename, size_t X, size_t Y) {
+WorldGrid WorldGrid::from_file(const char* filename) {
   int length;
   char* contents = load_file(filename, &length);
   if (!contents) {
@@ -27,19 +27,9 @@ WorldGrid WorldGrid::from_file(const char* filename, size_t X, size_t Y) {
     }
   }
 
-/*
   // allocate a grid large enough for the scenario
   // plus an extra ring of sinks around the outside
   WorldGrid grid(size_t(width)+2, size_t(height)+2);
-*/
-
-  if (size_t(width) > X-2 || size_t(height) > Y-2) {
-    fprintf(stderr, "Failed to load %s.\n"
-      "Scenario dimensions [%d,%d] exceed maximums [%zu,%zu]!\n",
-      filename, width, height, X-2, Y-2);
-    exit(1);
-  }
-  WorldGrid grid(X,Y);
 
   // initialize the grid
   // note that text files start at the top of the page and go down,
