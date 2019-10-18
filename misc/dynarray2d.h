@@ -73,7 +73,7 @@ dynarray2d<T>::dynarray2d(size_t width, size_t height)
   , width_(width)
   , height_(height)
 {
-  assert(width*height/height == width); // overflow check
+  assert(height == 0 || width*height/height == width); // overflow check
 }
 
 template <class T>

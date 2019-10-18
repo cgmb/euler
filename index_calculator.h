@@ -78,5 +78,5 @@ inline size_t IndexCalculator::left(size_t i) const {
 
 // Returns false if x*y would overflow.
 inline bool IndexCalculator::check_overflow(size_t x, size_t y) {
-  return x*y/y == x;
+  return y == 0 || x*y/y == x;
 }
