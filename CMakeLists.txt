@@ -20,6 +20,7 @@ endif()
 add_executable(euler
   main.cxx
   world_grid.cxx
+  misc/debug.cxx
   misc/terminal.cxx
   misc/file.cxx
   misc/rng.cxx

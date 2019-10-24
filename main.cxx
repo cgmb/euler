@@ -13,6 +13,7 @@
 
 #include "math/vec2f.h"
 #include "math/vec2zu.h"
+#include "misc/debug.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
 #include "misc/int.h"
@@ -1203,6 +1204,8 @@ timespec wait(long desired_interval_nsec, timespec start) {
 }
 
 int main(int argc, char** argv) {
+  enable_fpmath_asserts();
+
   args_t in = parse_args(argc, argv);
   g_rainbow_enabled = in.rainbow;
 
