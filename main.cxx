@@ -550,16 +550,14 @@ vec2f velocity_at(vec2f pos) {
   return vec2f{x,y};
 }
 
-float time_to(vec2f p0, vec2f p1, vec2f v, int axis) {
+float time_to(float p0, float p1, float v) {
   // p1 = p0 + v*t
   // t = (p1 - p0) / v
-  float t;
-  if (fabsf(v[axis]) > 0.f) {
-    t = (p1[axis] - p0[axis]) / v[axis];
+  if (fabsf(v) > 0.f) {
+    return (p1 - p0) / v;
   } else {
-    t = FLT_MAX;
+    return FLT_MAX;
   }
-  return t;
 }
 
 // Collision detection was developed ad-hoc, but I should probably read
@@ -576,8 +574,8 @@ void advect_markers(float dt) {
     // next horizontal intersect
     int x_dir = v.x > 0 ? 1 : -1;
     int nx_idx = x_idx + (v.x > 0 ? 1 : 0);
-    np[0] = nx_idx*k_s;
-    float t_x = time_to(p, np, v, 0);
+    np.x = nx_idx*k_s;
+    float t_x = time_to(p.x, np.x, v.x);
     // at idx = x, we're on the boundary between x-1 and x
     // if we're going left, the pressure cell we care about is x-1
     // if we're going right, the pressure cell we care about is x
@@ -586,8 +584,8 @@ void advect_markers(float dt) {
     // next vertical intersect
     int y_dir = v.y > 0 ? 1 : -1;
     int ny_idx = y_idx + (v.y > 0 ? 1 : 0);
-    np[1] = ny_idx*k_s;
-    float t_y = time_to(p, np, v, 1);
+    np.y = ny_idx*k_s;
+    float t_y = time_to(p.y, np.y, v.y);
     // at idx = y, we're on the boundary between y-1 and y
     // if we're going down, the pressure cell we care about is y-1
     // if we're going up, the pressure cell we care about is y
@@ -603,15 +601,15 @@ void advect_markers(float dt) {
           p += v * t_prev;
           dt -= t_prev;
           t_near = 0;
-          v[0] = 0.f;
+          v.x = 0.f;
           t_x = FLT_MAX;
-          t_y = time_to(p, np, v, 1);
+          t_y = time_to(p.y, np.y, v.y);
         } else {
           // calculate next intersection
           x_idx = nx_idx;
           nx_idx = x_idx + x_dir;
-          np[0] = nx_idx*k_s;
-          t_x = time_to(p, np, v, 0);
+          np.x = nx_idx*k_s;
+          t_x = time_to(p.x, np.x, v.x);
         }
       } else {
         // entered new vertical cell
@@ -620,15 +618,15 @@ void advect_markers(float dt) {
           p += v * t_prev;
           dt -= t_prev;
           t_near = 0;
-          v[1] = 0.f;
+          v.y = 0.f;
           t_y = FLT_MAX;
-          t_x = time_to(p, np, v, 0);
+          t_x = time_to(p.x, np.x, v.x);
         } else {
           // calculate next intersection
           y_idx = ny_idx;
           ny_idx = y_idx + y_dir;
-          np[1] = ny_idx*k_s;
-          t_y = time_to(p, np, v, 1);
+          np.y = ny_idx*k_s;
+          t_y = time_to(p.y, np.y, v.y);
         }
       }
       t_prev = t_near;

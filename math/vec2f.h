@@ -9,9 +9,6 @@ struct vec2f {
   vec2f() = default;
   vec2f(float x, float y);
 
-  const float& operator[](size_t i) const;
-  float& operator[](size_t i);
-
   vec2f& operator*=(float rhs);
   vec2f& operator+=(const vec2f& rhs);
   vec2f& operator-=(const vec2f& rhs);
@@ -68,24 +65,6 @@ inline vec2f::vec2f(float x, float y)
   : x(x)
   , y(y)
 {}
-
-inline const float& vec2f::operator[](size_t i) const {
-  switch (i) {
-    case 0: return x;
-    case 1: return y;
-    default: assert(i < 2);
-  }
-  __builtin_unreachable();
-}
-
-inline float& vec2f::operator[](size_t i) {
-  switch (i) {
-    case 0: return x;
-    case 1: return y;
-    default: assert(i < 2);
-  }
-  __builtin_unreachable();
-}
 
 inline vec2f& vec2f::operator*=(float rhs) {
   vec2f& lhs = *this;
