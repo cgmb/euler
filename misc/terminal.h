@@ -1,5 +1,4 @@
-#ifndef TERMINAL_H
-#define TERMINAL_H
+#pragma once
 
 struct buffer {
   char* data;
@@ -47,5 +46,3 @@ int set_window_size_handler(wshandler_t fn);
 #define T_BG_WHITE   "\x1B[47m"
 
 #define T_RESET   "\x1B[0m"
-
-#endif

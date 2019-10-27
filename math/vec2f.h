@@ -1,5 +1,4 @@
-#ifndef VEC2F_H
-#define VEC2F_H
+#pragma once
 
 #include <assert.h>
 #include <math.h>
@@ -93,5 +92,3 @@ inline vec2f& vec2f::operator/=(float rhs) {
   lhs.y /= rhs;
   return lhs;
 }
-
-#endif
