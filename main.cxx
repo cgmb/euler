@@ -615,7 +615,7 @@ void advect_markers(float dt) {
         }
       } else {
         // entered new vertical cell
-        if (g_solid[y_idx + y_idx_offset][x_idx]) {
+        if (g_solid[ny_idx + y_idx_offset][x_idx]) {
           // hit! we're done going vertical
           p += v * t_prev;
           dt -= t_prev;
