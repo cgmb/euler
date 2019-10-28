@@ -29,6 +29,15 @@ inline vec2zu operator-(vec2zu lhs, const vec2zu& rhs) {
   return lhs -= rhs;
 }
 
+inline bool operator==(const vec2zu& lhs, const vec2zu& rhs) {
+  return lhs.x == rhs.x
+    && lhs.y == rhs.y;
+}
+
+inline bool operator!=(const vec2zu& lhs, const vec2zu& rhs) {
+  return !(lhs == rhs);
+}
+
 /* Member Functions */
 
 inline vec2zu::vec2zu(size_t x, size_t y)

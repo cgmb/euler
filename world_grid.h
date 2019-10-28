@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "misc/bool_grid_adapters.h"
 #include "index_calculator.h"
 
 class WorldGrid {
@@ -31,6 +32,10 @@ public:
   bool is_sink(vec2zu index) const;
 
   static WorldGrid from_file(const char* filename);
+
+  PBoolGridAdapter fluid_grid() const;
+  PBoolGridAdapter old_fluid_grid() const;
+  PBoolGridAdapter solid_grid() const;
 
 private:
   IndexCalculator ic_;
@@ -109,4 +114,16 @@ inline bool WorldGrid::is_source(vec2zu index) const {
 
 inline bool WorldGrid::is_sink(vec2zu index) const {
   return sink_[ic_.to1d(index)];
+}
+
+inline PBoolGridAdapter WorldGrid::fluid_grid() const {
+  return PBoolGridAdapter(ic_, fluid_);
+}
+
+inline PBoolGridAdapter WorldGrid::old_fluid_grid() const {
+  return PBoolGridAdapter(ic_, old_fluid_);
+}
+
+inline PBoolGridAdapter WorldGrid::solid_grid() const {
+  return PBoolGridAdapter(ic_, solid_);
 }

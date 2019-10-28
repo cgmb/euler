@@ -12,6 +12,7 @@ public:
   size_t width() const;
   size_t height() const;
   size_t size() const;
+  vec2zu dimensions() const;
 
   vec2zu to2d(size_t i) const;
   size_t to1d(vec2zu i) const;
@@ -45,6 +46,10 @@ inline size_t IndexCalculator::height() const {
 
 inline size_t IndexCalculator::size() const {
   return x_ * y_;
+}
+
+inline vec2zu IndexCalculator::dimensions() const {
+  return vec2zu(x_, y_);
 }
 
 inline vec2zu IndexCalculator::to2d(size_t i) const {

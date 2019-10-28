@@ -35,7 +35,10 @@ public:
   size_t height() const;
   vec2zu dimensions() const;
 
+  size_t flatten(const vec2zu& index) const;
+
   void resize(size_t x, size_t y);
+  void resize(const vec2zu& dimensions);
 
   using base::data;
   using base::size;
@@ -84,13 +87,13 @@ dynarray2d<T>::dynarray2d(const vec2zu& dimensions)
 template <class T>
 T& dynarray2d<T>::operator[](const vec2zu& index) {
   assert(is_valid(index));
-  return operator[](index.y*width_ + index.x);
+  return operator[](flatten(index));
 }
 
 template <class T>
 const T& dynarray2d<T>::operator[](const vec2zu& index) const {
   assert(is_valid(index));
-  return operator[](index.y*width_ + index.x);
+  return operator[](flatten(index));
 }
 
 template <class T>
@@ -109,6 +112,11 @@ vec2zu dynarray2d<T>::dimensions() const {
 }
 
 template <class T>
+size_t dynarray2d<T>::flatten(const vec2zu& index) const {
+  return index.y*width_ + index.x;
+}
+
+template <class T>
 bool dynarray2d<T>::is_valid(const vec2zu& index) const {
   return index.x < width_
       && index.y < height_;
@@ -119,6 +127,11 @@ void dynarray2d<T>::resize(size_t x, size_t y) {
   width_ = x;
   height_ = y;
   base::resize(x*y);
+}
+
+template <class T>
+void dynarray2d<T>::resize(const vec2zu& dimensions) {
+  resize(dimensions.x, dimensions.y);
 }
 
 template <class T>

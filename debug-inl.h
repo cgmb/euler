@@ -17,33 +17,41 @@
 */
 
 // Fills q with the dense fluid matrix A.
-void get_dense_a(int q[Y*X][Y*X]) {
+dynarray2d<int> get_dense_a() {
+  size_t sz = X*Y;
+  dynarray2d<int> q(sz, sz);
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y, x)) {
-        q[X*y+x][X*y+x] = g_a[y][x].a_diag;
+        q[{X*y+x,X*y+x}] = g_a[{x,y}].a_diag;
         if (x > 0)
-          q[X*y+x][X*y+x-1] = get_a_minus_i(y,x);
+          q[{X*y+x-1,X*y+x}] = get_a_minus_i(y,x);
         if (x+1 < X)
-          q[X*y+x][X*y+x+1] = g_a[y][x].a_plus_i;
+          //q[X*y+x+1,X*y+x] = g_a[{x,y}].a_plus_i;
+          q[{X*y+x+1,X*y+x}] = get_a_plus_i(y,x);
         if (y > 0)
-          q[X*y+x][X*(y-1)+x] = get_a_minus_j(y,x);
+          q[{X*(y-1)+x,X*y+x}] = get_a_minus_j(y,x);
         if (y+1 < X)
-          q[X*y+x][X*(y+1)+x] = g_a[y][x].a_plus_j;
+          //q[{X*(y+1)+x,X*y+x}] = g_a[{x,y}].a_plus_j;
+          q[{X*(y+1)+x,X*y+x}] = get_a_plus_j(y,x);
       }
     }
   }
+  return q;
 }
 
 // Prints a dense fluid matrix. e.g. A
-void print_fluid_matrix(FILE* f, const char* name, int q[Y*X][Y*X]) {
+void print_fluid_matrix(FILE* f, const char* name, const dynarray2d<int>& q) {
+  assert(q.width() == X*Y);
+  assert(q.height() == X*Y);
+
   fprintf(f, "%s = [", name);
   for (size_t y0 = 0; y0 < Y; ++y0) {
     for (size_t x0 = 0; x0 < X; ++x0) {
       for (size_t y1 = 0; y1 < Y; ++y1) {
         for (size_t x1 = 0; x1 < X; ++x1) {
           if (is_water(y0,x0) && is_water(y1,x1)) {
-            fprintf(f, "% 2d ", q[y0*X+x0][y1*X+x1]);
+            fprintf(f, "% 2d ", q[{y1*X+x1,y0*X+x0}]);
           }
         }
       }
@@ -60,12 +68,12 @@ void print_fluid_matrix(FILE* f, const char* name, int q[Y*X][Y*X]) {
 // Despite its appearance, q is a 1D vector with an index based on y and x.
 // It's not quite as simple as 'idx = y*X + x', because cells that don't
 // contain fluid are not part of the vector.
-void print_fluid_vector(FILE* f, const char* name, double q[Y][X]) {
+void print_fluid_vector(FILE* f, const char* name, const dynarray2d<double>& q) {
   fprintf(f, "%s = [", name);
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (size_t y = 0; y < q.height(); ++y) {
+    for (size_t x = 0; x < q.width(); ++x) {
       if (is_water(y,x)) {
-        fprintf(f, "%f ", q[y][x]);
+        fprintf(f, "%f ", q[{x,y}]);
       }
     }
   }
@@ -75,11 +83,11 @@ void print_fluid_vector(FILE* f, const char* name, double q[Y][X]) {
 // Prints a matrix
 // This has the function same signature as print_fluid_vector, but in this case
 // q really is a 2D matrix. All cells are part of the matrix, fluid or not.
-void print_matrix(FILE* f, const char* name, float q[Y][X]) {
+void print_matrix(FILE* f, const char* name, const dynarray2d<float>& q) {
   fprintf(f, "%s = [", name);
-  for (size_t y = Y; y--;) {
-    for (size_t x = 0; x < X; ++x) {
-      fprintf(f, "%f ", q[y][x]);
+  for (size_t y = q.height(); y--;) {
+    for (size_t x = 0; x < q.width(); ++x) {
+      fprintf(f, "%f ", q[{x,y}]);
     }
     fprintf(f, ";\n");
   }
