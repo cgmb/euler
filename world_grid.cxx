@@ -29,7 +29,7 @@ WorldGrid WorldGrid::from_file(const char* filename) {
 
   // allocate a grid large enough for the scenario
   // plus an extra ring of sinks around the outside
-  WorldGrid grid(size_t(width)+2, size_t(height)+2);
+  WorldGrid grid(size_t(width)+2, size_t(2*height)+2);
 
   // initialize the grid
   // note that text files start at the top of the page and go down,
@@ -40,16 +40,21 @@ WorldGrid WorldGrid::from_file(const char* filename) {
     char c = contents[i];
     if (c == '\n') {
       x = 0;
-      --y;
+      y -= 2;
     } else if (c == 'X') {
       grid.flag_as_solid({x,y});
+      grid.flag_as_solid({x,y-1});
     } else if (c == '0') {
       grid.flag_as_fluid({x,y});
+      grid.flag_as_fluid({x,y-1});
     } else if (c == '?') {
       grid.flag_as_fluid({x,y});
+      grid.flag_as_fluid({x,y-1});
+      grid.flag_as_source({x,y-1});
       grid.flag_as_source({x,y});
     } else if (c == '=') {
       grid.flag_as_sink({x,y});
+      grid.flag_as_sink({x,y-1});
     }
   }
 

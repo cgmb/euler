@@ -979,12 +979,17 @@ float linear_to_sRGB(float x) {
   return powf(x, 1/2.2f); // approximation
 }
 
-void buffer_append_color(buffer* buf, const vec3f& color) {
+enum ColorMode {
+  CM_FOREGROUND = '3',
+  CM_BACKGROUND = '4'
+};
+
+void buffer_append_color(buffer* buf, const vec3f& color, ColorMode mode = CM_FOREGROUND) {
   char tmp[20];
   int r_out = float_to_byte_color(linear_to_sRGB(color.x));
   int g_out = float_to_byte_color(linear_to_sRGB(color.y));
   int b_out = float_to_byte_color(linear_to_sRGB(color.z));
-  int length = sprintf(tmp, "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
+  int length = sprintf(tmp, "\x1B[%c8;2;%d;%d;%dm", mode, r_out, g_out, b_out);
   if (length < 0) {
     die("sprintf");
   }
@@ -1005,10 +1010,10 @@ char type_at(const vec2zu& index) {
     return 'X';
   } else if (g_grid.is_sink(index)) {
     return '=';
-  } else if (g_grid.is_fluid(index)) {
-    return '0';
   } else {
-    return ' ';
+    int lower = g_grid.is_fluid({index.x, index.y-1}) ? 0x1 : 0;
+    int upper = g_grid.is_fluid(index) ? 0x2 : 0;
+    return char(lower + upper);
   }
 }
 
@@ -1016,8 +1021,12 @@ vec3f rgb(const vec2zu& index) {
   return vec3f(g_r[index], g_g[index], g_b[index]);
 }
 
-void draw_fluid(const vec2zu& end, int count, buffer* buf) {
-  const char symbol[] = {'o','O','0'};
+vec3f pressure_color(const vec2zu& index) {
+  return colormap(clampf(0, g_p[index]/128.0, 1));
+}
+
+void draw_fluid(const vec2zu& end, char type, int count, buffer* buf) {
+  const char* symbol[] = {" ","▄","▀","█"};
 
   if (!g_rainbow_enabled && !g_view_pressure) {
     buffer_appendz(buf, T_BLUE);
@@ -1025,32 +1034,65 @@ void draw_fluid(const vec2zu& end, int count, buffer* buf) {
   const size_t y = end.y;
   for (size_t x = end.x - count; x < end.x; x++) {
     vec2zu index(x,y);
-    if (g_rainbow_enabled) {
-      buffer_append_color(buf, rgb(index));
+    int symbol_idx = type;
+    bool reset_background = false;
+    if (g_rainbow_enabled) { // use the background color with half-blocks for double-vertical resolution
+      if (type == 3) {
+        buffer_append_color(buf, rgb(index), CM_BACKGROUND);
+        buffer_append_color(buf, rgb({index.x, index.y-1}), CM_FOREGROUND);
+        symbol_idx = 1;
+        reset_background = true;
+      } else if (type == 2) {
+        buffer_append_color(buf, rgb(index), CM_FOREGROUND);
+      } else if (type == 1) {
+        buffer_append_color(buf, rgb({index.x, index.y-1}), CM_FOREGROUND);
+      }
     } else if (g_view_pressure) {
-      float p = clampf(0, g_p[index]/128.0, 1);
-      buffer_append_color(buf, colormap(p));
+      if (type == 3) {
+        buffer_append_color(buf, pressure_color(index), CM_BACKGROUND);
+        buffer_append_color(buf, pressure_color({index.x, index.y-1}), CM_FOREGROUND);
+        symbol_idx = 1;
+        reset_background = true;
+      } else if (type == 2) {
+        buffer_append_color(buf, pressure_color(index), CM_FOREGROUND);
+      } else if (type == 1) {
+        buffer_append_color(buf, pressure_color({index.x, index.y-1}), CM_FOREGROUND);
+      }
     }
-    buffer_append_char(buf, symbol[min(g_marker_count[index]-1, 2)]);
+    buffer_appendz(buf, symbol[int(symbol_idx)]);
+    if (reset_background) {
+      buffer_appendz(buf, T_BG_DEFAULT);
+    }
   }
   buffer_appendz(buf, T_RESET);
 }
 
 void draw_nonfluid(char type, int count, buffer* buf) {
-  buffer_append_nchars(buf, type, count);
+  const char* symbol;
+  if (type == 'X') {
+    symbol = "█";
+  } else if (type == '=') {
+    symbol = "░";
+  } else {
+    symbol = " ";
+  }
+  for (int i = 0; i < count; ++i) {
+    buffer_appendz(buf, symbol);
+  }
 }
 
 void draw_run(const run_t& run, const vec2zu& index, buffer* buf) {
-  if (run.type == '0') {
-    draw_fluid(index, run.length, buf);
+  if (run.type < 4) {
+    draw_fluid(index, run.type, run.length, buf);
   } else {
     draw_nonfluid(run.type, run.length, buf);
   }
 }
 
 void draw_rows(buffer* buf) {
-  size_t y_cutoff = (Y-1 < g_wy+1) ? 1 : Y-1 - g_wy;
-  for (size_t y = Y-1; y-- > y_cutoff;) {
+  ssize_t y_cutoff = (Y-2 < 2*g_wy) ? 1 : Y-2 - 2*g_wy;
+  for (ssize_t ys = Y-2; ys > y_cutoff; ys -= 2) {
+    size_t y = size_t(ys);
     run_t run = { 1, type_at({1,y}) };
     size_t x = 2;
     for (; x < X-1 && x < g_wx+1; x++) {
@@ -1065,9 +1107,24 @@ void draw_rows(buffer* buf) {
     }
     draw_run(run, {x,y}, buf);
     buffer_appendz(buf, "\x1b[K"); // clear remainer of line
-    if (y > y_cutoff) {
+    if (ys > y_cutoff) {
       buffer_appendz(buf, "\r\n");
     }
+  }
+}
+
+bool g_show_status = false;
+long g_frametime;
+
+void draw_status_bar(buffer* buf) {
+  if (g_show_status) {
+    char tmp[120];
+    snprintf(tmp, sizeof(tmp),
+      "frame (ms):%4ld | "
+      "grid: [%3zu,%3zu] | "
+      "markers:%7zu"
+      "\n", g_frametime, X, Y, g_markers.size());
+    buffer_appendz(buf, tmp);
   }
 }
 
@@ -1075,6 +1132,8 @@ void draw(buffer* buf) {
   buffer_clear(buf);
   reposition_cursor(buf);
   draw_rows(buf);
+  draw_status_bar(buf);
+  hide_cursor(buf);
   buffer_write(buf);
 }
 
@@ -1092,6 +1151,8 @@ bool process_keypress() {
     if (g_rainbow_enabled) {
       colorize();
     }
+  } else if (c == 's') {
+    g_show_status = !g_show_status;
   } else if (c == 'q') {
     u_clear_screen();
     return false;
@@ -1169,7 +1230,7 @@ timespec wait(long desired_interval_nsec, timespec start) {
       clock_gettime(CLOCK_MONOTONIC, &now);
     }
   }
-
+  g_frametime = diff.tv_nsec/1000000 + diff.tv_sec*1000;
   return now;
 }
 

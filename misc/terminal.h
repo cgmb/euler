@@ -37,6 +37,7 @@ int set_window_size_handler(wshandler_t fn);
 #define T_MAGENTA "\x1B[35m"
 #define T_CYAN    "\x1B[36m"
 #define T_WHITE   "\x1B[37m"
+#define T_DEFAULT "\x1B[39m"
 
 #define T_BG_BLACK   "\x1B[40m"
 #define T_BG_RED     "\x1B[41m"
@@ -46,5 +47,6 @@ int set_window_size_handler(wshandler_t fn);
 #define T_BG_MAGENTA "\x1B[45m"
 #define T_BG_CYAN    "\x1B[46m"
 #define T_BG_WHITE   "\x1B[47m"
+#define T_BG_DEFAULT "\x1B[49m"
 
 #define T_RESET   "\x1B[0m"
