@@ -35,6 +35,10 @@ X000O0O00O0O0O00000000000000000000000000000O00000000000000O0000X
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
+## Warning
+**This is the development branch, which may be broken, rebased, deleted,
+refactored, compacted, eradicated, translated or evaporated at any time.**
+
 ## About
 Euler is a basic Eulerian fluid simulator based on the first edition of "Fluid
 Simulation for Computer Graphics" by Robert Bridson. The book is an improved
