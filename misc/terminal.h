@@ -1,9 +1,9 @@
 #pragma once
 
-struct buffer {
+typedef struct buffer {
   char* data;
   int len;
-};
+} buffer;
 
 void buffer_append(buffer* buf, const char* s, int len);
 void buffer_free(buffer* buf);

@@ -1,39 +1,44 @@
 #include <assert.h>
 #include <float.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
 #include <math.h>
 #include <time.h>
 
-#include <algorithm>
-
 #include "math/vec2f.h"
+#include "misc/cmp.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
 #include "misc/rng.h"
 
 // simulation size
-const size_t X = 100;
-const size_t Y = 40;
+enum {
+  X = 100,
+  Y = 40
+};
 
 // display size
 int g_wx;
 int g_wy;
 
-struct args_t {
+typedef struct args_t {
   const char* scenario_file;
   bool rainbow;
-};
+} args_t;
 
 // simulation constants
-const float k_s = 1; // side length
-const float k_inv_s = 1/k_s;
-const float k_d = 1.0; // density
-const float k_inv_d = 1/k_d;
+const float k_s = 1.f; // side length
+const float k_d = 1.f; // density
 const float k_g = -10.f; // gravity
+
+float invf(float x) {
+  return 1.f / x;
+}
 
 // All arrays are the same size so functions like bilinear interpolation can
 // work on any array. The real size is smaller and is listed in the comments.
@@ -84,17 +89,19 @@ uint32_t g_simulate_steps;
 uint16_t g_frame_count;
 
 // pressure matrix
-struct sparse_entry_t {
+typedef struct sparse_entry_t {
   int8_t a_diag;
   int8_t a_plus_i;
   int8_t a_plus_j;
-} g_a[Y][X];
+} sparse_entry_t;
+
+sparse_entry_t g_a[Y][X];
 
 // marker particle data
-const size_t k_max_marker_count = 4*Y*X;
+#define MAX_MARKER_COUNT (4*Y*X)
 size_t g_markers_length;
 bool g_source_exhausted;
-vec2f g_markers[k_max_marker_count];
+vec2f g_markers[MAX_MARKER_COUNT];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
 
@@ -112,8 +119,8 @@ void refresh_marker_counts() {
   memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
   memset(g_marker_count, '\0', sizeof(g_marker_count));
   for (size_t i = 0; i < g_markers_length; ++i) {
-    int x = (int)floorf(g_markers[i].x*k_inv_s);
-    int y = (int)floorf(g_markers[i].y*k_inv_s);
+    int x = (int)floorf(g_markers[i].x / k_s);
+    int y = (int)floorf(g_markers[i].y / k_s);
     bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
     if (in_bounds) {
       if (g_sink[y][x]) {
@@ -233,7 +240,7 @@ void colorize() {
 float randf() {
   static uint64_t rng_state = 0x9bd185c449534b91;
   uint32_t x = xorshift64_32star(&rng_state);
-  return float(x / double(UINT32_MAX));
+  return (float)(x / (double)UINT32_MAX);
 }
 
 void sim_init(args_t in) {
@@ -289,7 +296,7 @@ void sim_init(args_t in) {
         for (size_t k = 0; k < 4; ++k) {
           float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
           float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
-          g_markers[idx++] = k_s*vec2f{x,y};
+          g_markers[idx++] = mulf_v2f(k_s, make_v2f(x,y));
         }
       }
     }
@@ -308,16 +315,16 @@ void update_fluid_sources() {
   // The current extrapolation implementation assumes that the fluid is never
   // more than one cell from a cell where fluid was in the previous step. If
   // we stop and then later restart generating fluid, that may not hold true.
-  g_source_exhausted |= (g_markers_length == k_max_marker_count-1);
+  g_source_exhausted |= (g_markers_length == MAX_MARKER_COUNT-1);
 
   float t = 0.6f / k_source_color_period * g_frame_count;
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (g_source[y][x]) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
-          g_markers[g_markers_length++] = k_s*vec2f{x+randf(), y+randf()};
+          g_markers[g_markers_length++] = mulf_v2f(k_s, make_v2f(x+randf(), y+randf()));
           g_marker_count[y][x]++;
-          g_source_exhausted |= (g_markers_length == k_max_marker_count-1);
+          g_source_exhausted |= (g_markers_length == MAX_MARKER_COUNT-1);
         }
         g_r[y][x] = hsv_basis(t + 2.f);
         g_g[y][x] = hsv_basis(t);
@@ -375,12 +382,12 @@ float interpolate_u(float u[Y][X], float y, float x) {
   float x_floor;
   float x_frac = modff(x, &x_floor);
   int x_floori = (int)x_floor;
-  int x_ceili = std::min(x_floori+1, int(X)-2);
+  int x_ceili = min_i(x_floori+1, X-2);
 
   float y_floor;
   float y_frac = modff(y, &y_floor);
   int y_floori = (int)y_floor;
-  int y_ceili = std::min(y_floori+1, int(Y)-1);
+  int y_ceili = min_i(y_floori+1, Y-1);
 
   // bilinearly interpolate between the 4 surrounding points, excluding
   // any points that do not have water
@@ -401,12 +408,12 @@ float interpolate_v(float v[Y][X], float y, float x) {
   float x_floor;
   float x_frac = modff(x, &x_floor);
   int x_floori = (int)x_floor;
-  int x_ceili = std::min(x_floori+1, int(X)-1);
+  int x_ceili = min_i(x_floori+1, X-1);
 
   float y_floor;
   float y_frac = modff(y, &y_floor);
   int y_floori = (int)y_floor;
-  int y_ceili = std::min(y_floori+1, int(Y)-2);
+  int y_ceili = min_i(y_floori+1, Y-2);
 
   // bilinearly interpolate between the 4 surrounding points, excluding
   // any points that do not have water
@@ -427,12 +434,12 @@ float interpolate_p(float q[Y][X], float y, float x) {
   float x_floor;
   float x_frac = modff(x, &x_floor);
   int x_floori = (int)x_floor;
-  int x_ceili = std::min(x_floori+1, int(X)-1);
+  int x_ceili = min_i(x_floori+1, X-1);
 
   float y_floor;
   float y_frac = modff(y, &y_floor);
   int y_floori = (int)y_floor;
-  int y_ceili = std::min(y_floori+1, int(Y)-1);
+  int y_ceili = min_i(y_floori+1, Y-1);
 
   // bilinearly interpolate between the 4 surrounding points, excluding
   // any points that do not have water
@@ -474,8 +481,8 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
           }
         }
         float dy = (vv[0] + vv[1] + vv[2] + vv[3]) / div;
-        float prev_x = x - dx*dt*k_inv_s;
-        float prev_y = y - dy*dt*k_inv_s;
+        float prev_x = x - dx*dt / k_s;
+        float prev_y = y - dy*dt / k_s;
 
         out[y][x] = interpolate_u(g_u, prev_y, prev_x);
       }
@@ -512,8 +519,8 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
           }
         }
         float dx = (uu[0] + uu[1] + uu[2] + uu[3]) / div;
-        float prev_x = x - dx*dt*k_inv_s;
-        float prev_y = y - dy*dt*k_inv_s;
+        float prev_x = x - dx*dt / k_s;
+        float prev_y = y - dy*dt / k_s;
 
         out[y][x] = interpolate_v(g_v, prev_y, prev_x);
       }
@@ -529,8 +536,8 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
         // as my pressure solve doesn't check those bounds either
         float dy = (v[y][x] + v[y-1][x]) / 2;
         float dx = (u[y][x] + u[y][x-1]) / 2;
-        float prev_x = x - dx*dt*k_inv_s;
-        float prev_y = y - dy*dt*k_inv_s;
+        float prev_x = x - dx*dt / k_s;
+        float prev_y = y - dy*dt / k_s;
 
         out[y][x] = interpolate_p(q, prev_y, prev_x);
       }
@@ -539,15 +546,15 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
 }
 
 vec2f velocity_at(vec2f pos) {
-  float u_x = pos.x*k_inv_s - 1.f;
-  float u_y = pos.y*k_inv_s - 0.5f;
-  float v_x = pos.x*k_inv_s - 0.5f;
-  float v_y = pos.y*k_inv_s - 1.f;
+  float u_x = pos.x / k_s - 1.f;
+  float u_y = pos.y / k_s - 0.5f;
+  float v_x = pos.x / k_s - 0.5f;
+  float v_y = pos.y / k_s - 1.f;
 
   // out-of-bounds is handled in interpolate
   float x = interpolate_u(g_u, u_y, u_x);
   float y = interpolate_v(g_v, v_y, v_x);
-  return vec2f{x,y};
+  return make_v2f(x, y);
 }
 
 float time_to(float p0, float p1, float v) {
@@ -568,8 +575,8 @@ void advect_markers(float dt) {
     vec2f v = velocity_at(p);
     vec2f np;
 
-    int x_idx = (int)floorf(p.x*k_inv_s);
-    int y_idx = (int)floorf(p.y*k_inv_s);
+    int x_idx = (int)floorf(p.x / k_s);
+    int y_idx = (int)floorf(p.y / k_s);
 
     // next horizontal intersect
     int x_dir = v.x > 0 ? 1 : -1;
@@ -592,13 +599,13 @@ void advect_markers(float dt) {
     int y_idx_offset = v.y < 0 ? -1 : 0;
 
     float t_prev = 0.f;
-    float t_near = std::min(t_x, t_y);
+    float t_near = min_f(t_x, t_y);
     while (t_near < dt) {
       if (t_x < t_y) {
         // entered new horizontal cell
         if (g_solid[y_idx][nx_idx + x_idx_offset]) {
           // hit! we're done going horizontal
-          p += v * t_prev;
+          p = add_v2f(p, mulf_v2f(t_prev, v));
           dt -= t_prev;
           t_near = 0;
           v.x = 0.f;
@@ -615,7 +622,7 @@ void advect_markers(float dt) {
         // entered new vertical cell
         if (g_solid[ny_idx + y_idx_offset][x_idx]) {
           // hit! we're done going vertical
-          p += v * t_prev;
+          p = add_v2f(p, mulf_v2f(t_prev, v));
           dt -= t_prev;
           t_near = 0;
           v.y = 0.f;
@@ -630,12 +637,12 @@ void advect_markers(float dt) {
         }
       }
       t_prev = t_near;
-      t_near = std::min(t_x, t_y);
+      t_near = min_f(t_x, t_y);
     }
     if (t_near < FLT_MAX) {
-      g_markers[i] = p + v*dt;
+      g_markers[i] = add_v2f(p, mulf_v2f(dt, v));
     } else {
-      g_markers[i] = p + v*t_prev;
+      g_markers[i] = add_v2f(p, mulf_v2f(t_prev, v));
     }
   }
 }
@@ -804,7 +811,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (is_water(y,x)) {
         float up = x>0 ? u[y][x-1] : 0;
         float vp = y>0 ? v[y-1][x] : 0;
-        d0[y][x] = c * k_inv_s * (u[y][x] - up + v[y][x] - vp);
+        d0[y][x] = c * invf(k_s) * (u[y][x] - up + v[y][x] - vp);
       }
     }
   }
@@ -872,7 +879,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (g_solid[y][x] || g_solid[y][x+1]) {
         uout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y,x+1)) {
-        uout[y][x] = u[y][x] - k_inv_d * k_inv_s * dt * (p[y][x+1] - p[y][x]);
+        uout[y][x] = u[y][x] - invf(k_d*k_s) * dt * (p[y][x+1] - p[y][x]);
       } else { // both cells are air
         uout[y][x] = 0.f;
       }
@@ -885,7 +892,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (g_solid[y][x] || g_solid[y+1][x]) {
         vout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y+1,x)) {
-        vout[y][x] = v[y][x] - k_inv_d * k_inv_s * dt * (p[y+1][x] - p[y][x]);
+        vout[y][x] = v[y][x] - invf(k_d*k_s) * dt * (p[y+1][x] - p[y][x]);
       } else { // both cells are air
         vout[y][x] = 0.f;
       }
@@ -954,7 +961,7 @@ float calculate_timestep(float frame_time, float minimum_step) {
   if (max_velocity < (m*k_s / frame_time)) {
     dt = frame_time;
   } else {
-    dt = std::max(m*k_s / max_velocity, minimum_step);
+    dt = max_f(m*k_s / max_velocity, minimum_step);
   }
   return dt;
 }
@@ -1034,7 +1041,7 @@ void buffer_appendz(buffer* buf, const char* s) {
 void draw_rows(buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol_idx = 3;
-  const int y_cutoff = std::max((int)Y-1 - g_wy, 1);
+  const int y_cutoff = max_i((int)Y-1 - g_wy, 1);
   for (int y = Y-1; y-- > y_cutoff;) {
     bool prev_water = false;
     for (int x = 1; x < (int)X-1 && x < g_wx+1; x++) {
@@ -1050,7 +1057,7 @@ void draw_rows(buffer* buf) {
         }
         buffer_appendz(buf, "=");
       } else {
-        uint8_t i = std::min(g_marker_count[y][x], max_symbol_idx);
+        uint8_t i = min_u8(g_marker_count[y][x], max_symbol_idx);
         bool has_water = i > 0;
         if (!prev_water && has_water && !g_rainbow_enabled) {
           buffer_appendz(buf, T_BLUE);
@@ -1138,8 +1145,8 @@ void handle_window_size_changed(int signal) {
   u_clear_screen();
 }
 
-timespec subtract(const timespec& lhs, const timespec& rhs) {
-  timespec diff;
+struct timespec subtract(struct timespec lhs, struct timespec rhs) {
+  struct timespec diff;
   diff.tv_sec = lhs.tv_sec - rhs.tv_sec;
   diff.tv_nsec = lhs.tv_nsec - rhs.tv_nsec;
   if (lhs.tv_nsec < rhs.tv_nsec) {
@@ -1151,11 +1158,11 @@ timespec subtract(const timespec& lhs, const timespec& rhs) {
 
 // wait for up to one second from the given start time
 // returns the current time when it exits
-timespec wait(long desired_interval_nsec, timespec start) {
-  timespec now;
+struct timespec wait(long desired_interval_nsec, struct timespec start) {
+  struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
 
-  timespec diff = subtract(now, start);
+  struct timespec diff = subtract(now, start);
   if (diff.tv_sec == 0) {
     long wait_for = (desired_interval_nsec - diff.tv_nsec) / 1000;
     if (wait_for > 0) {
@@ -1181,7 +1188,7 @@ int main(int argc, char** argv) {
   sim_init(in);
   draw(&buf);
 
-  timespec interval_start;
+  struct timespec interval_start;
   clock_gettime(CLOCK_MONOTONIC, &interval_start);
   while (process_keypress()) {
     sim_step();

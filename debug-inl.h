@@ -1,5 +1,3 @@
-#pragma once
-
 /*
    These debug functions are used to print out the data structures used in the
    pressure solve. The output format is designed so output can be copy/pasted
