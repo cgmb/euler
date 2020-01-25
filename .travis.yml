@@ -1,9 +1,13 @@
 language: c
-sudo: required
-dist: bionic
+
 compiler:
 - gcc
 - clang
+
 os:
 - linux
+- osx
+dist: bionic
+osx_image: xcode9.4
+
 script: cmake -H. -Bbuild && cmake --build build
