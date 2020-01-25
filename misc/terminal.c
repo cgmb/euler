@@ -12,9 +12,16 @@
 
 static struct termios g_orig_termios;
 
+static void write_stdin(const void* buf, ssize_t count) {
+  ssize_t res = write(STDIN_FILENO, buf, count);
+  if (res != count) {
+    exit(1);
+  }
+}
+
 void u_clear_screen() {
-  write(STDIN_FILENO, "\x1b[2J", 4); // clear
-  write(STDIN_FILENO, "\x1b[H", 3);  // reposition cursor
+  write_stdin("\x1b[2J", 4); // clear
+  write_stdin("\x1b[H", 3);  // reposition cursor
 }
 
 void clear_screen(buffer* buf) {
@@ -35,7 +42,7 @@ void show_cursor(buffer* buf) {
 }
 
 void u_show_cursor() {
-  write(STDIN_FILENO, "\x1b[?25h", 6);
+  write_stdin("\x1b[?25h", 6);
 }
 
 void die(const char* msg) {
@@ -83,7 +90,7 @@ void buffer_append(buffer* buf, const char* s, int len) {
 }
 
 void buffer_write(buffer* buf) {
-  write(STDIN_FILENO, buf->data, buf->len);
+  write_stdin(buf->data, buf->len);
 }
 
 void buffer_clear(buffer* buf) {

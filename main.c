@@ -1158,7 +1158,8 @@ struct timespec subtract(struct timespec lhs, struct timespec rhs) {
 
 // wait for up to one second from the given start time
 // returns the current time when it exits
-struct timespec wait(long desired_interval_nsec, struct timespec start) {
+struct timespec wait_until_nsec_from(long desired_interval_nsec,
+                                     struct timespec start) {
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
 
@@ -1192,7 +1193,7 @@ int main(int argc, char** argv) {
   clock_gettime(CLOCK_MONOTONIC, &interval_start);
   while (process_keypress()) {
     sim_step();
-    interval_start = wait(1e8, interval_start);
+    interval_start = wait_until_nsec_from(1e8, interval_start);
     draw(&buf);
   }
 
