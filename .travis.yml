@@ -1,0 +1,9 @@
+language: c
+sudo: required
+dist: bionic
+compiler:
+- gcc
+- clang
+os:
+- linux
+script: cmake -H. -Bbuild && cmake --build build
