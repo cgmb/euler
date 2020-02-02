@@ -599,7 +599,7 @@ void advect_markers(float dt) {
     int y_idx_offset = v.y < 0 ? -1 : 0;
 
     float t_prev = 0.f;
-    float t_near = min_f(t_x, t_y);
+    float t_near = fminf(t_x, t_y);
     while (t_near < dt) {
       if (t_x < t_y) {
         // entered new horizontal cell
@@ -637,7 +637,7 @@ void advect_markers(float dt) {
         }
       }
       t_prev = t_near;
-      t_near = min_f(t_x, t_y);
+      t_near = fminf(t_x, t_y);
     }
     if (t_near < FLT_MAX) {
       g_markers[i] = add_v2f(p, mulf_v2f(dt, v));
@@ -961,7 +961,7 @@ float calculate_timestep(float frame_time, float minimum_step) {
   if (max_velocity < (m*k_s / frame_time)) {
     dt = frame_time;
   } else {
-    dt = max_f(m*k_s / max_velocity, minimum_step);
+    dt = fmaxf(m*k_s / max_velocity, minimum_step);
   }
   return dt;
 }

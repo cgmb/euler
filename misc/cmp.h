@@ -2,14 +2,6 @@
 
 #include <stdint.h>
 
-static inline float min_f(float a, float b) {
-  return a < b ? a : b;
-}
-
-static inline float max_f(float a, float b) {
-  return a < b ? b : a;
-}
-
 static inline int min_i(int a, int b) {
   return a < b ? a : b;
 }
