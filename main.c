@@ -1185,11 +1185,11 @@ int main(int argc, char** argv) {
   update_window_size();
   set_window_size_handler(&handle_window_size_changed);
 
+  sim_init(in);
+
   enable_raw_mode();
   u_clear_screen();
   buffer buf = { 0, 0 };
-
-  sim_init(in);
   draw(&buf);
 
   struct timespec interval_start;
