@@ -117,21 +117,18 @@ float clampf(float min, float x, float max) {
 }
 
 void refresh_marker_counts() {
-  memcpy(g_old_marker_count, g_marker_count, sizeof(g_old_marker_count));
-  memset(g_marker_count, '\0', sizeof(g_marker_count));
+  memcpy(g_old_marker_count, g_marker_count, sizeof(g_marker_count));
+  memset(g_marker_count, 0, sizeof(g_marker_count));
   for (size_t i = 0; i < g_markers_length; ++i) {
     int x = (int)floorf(g_markers[i].x / k_s);
     int y = (int)floorf(g_markers[i].y / k_s);
-    bool in_bounds = x > 0 && x < (int)X && y > 0 && y < (int)Y;
-    if (in_bounds) {
-      if (g_sink[y][x]) {
-        // remove marker by swapping with back and resizing
-        g_markers[i--] = g_markers[--g_markers_length];
-      } else {
-        g_marker_count[y][x]++;
-      }
-    } else {
+    assert(x > 0 && x < (int)X && y > 0 && y < (int)Y);
+    if (g_sink[y][x] || g_solid[y][x]) {
+      // todo: stop moving markers into solid objects
+      // remove marker by swapping with back and resizing
       g_markers[i--] = g_markers[--g_markers_length];
+    } else {
+      g_marker_count[y][x]++;
     }
   }
 }
@@ -526,8 +523,6 @@ vec2f velocity_at(vec2f pos) {
 }
 
 float time_to(float p0, float p1, float v) {
-  // p1 = p0 + v*t
-  // t = (p1 - p0) / v
   if (fabsf(v) > 0.f) {
     return (p1 - p0) / v;
   } else {
@@ -537,6 +532,9 @@ float time_to(float p0, float p1, float v) {
 
 // Collision detection was developed ad-hoc, but I should probably read
 // A Fast Voxel Traversal Algorithm for Ray Tracing (1987)
+// Note: Unfortunately, my collision detection via time_to depends
+// on (x/y)*y == x, which is only approximately true for
+// floating-point. Thus, occasionally particles will enter solid cells.
 void advect_markers(float dt) {
   for (size_t i = 0; i < g_markers_length; ++i) {
     vec2f p = g_markers[i];
