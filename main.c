@@ -1003,12 +1003,16 @@ float linear_to_sRGB(float x) {
   return powf(x, 1/2.2f); // approximation
 }
 
-int sprint_color_code(char* buf, float r, float g, float b) {
-  // buf must be at least 20 characters
+void buffer_append_color(buffer* buf, float r, float g, float b) {
+  char tmp[20];
   int r_out = float_to_byte_color(linear_to_sRGB(r));
   int g_out = float_to_byte_color(linear_to_sRGB(g));
   int b_out = float_to_byte_color(linear_to_sRGB(b));
-  return sprintf(buf, "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
+  int length = snprintf(tmp, sizeof(tmp), "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
+  if (length < 0 || length >= (int)sizeof(tmp)) {
+    die("sprintf");
+  }
+  buffer_append(buf, tmp, length);
 }
 
 void buffer_appendz(buffer* buf, const char* s) {
@@ -1039,12 +1043,7 @@ void draw_rows(buffer* buf) {
         if (!prev_water && has_water && !g_rainbow_enabled) {
           buffer_appendz(buf, T_BLUE);
         } else if (has_water && g_rainbow_enabled) {
-          char tmp[20];
-          int length = sprint_color_code(tmp, g_r[y][x], g_g[y][x], g_b[y][x]);
-          if (length < 0) {
-            die("sprintf");
-          }
-          buffer_append(buf, tmp, length);
+          buffer_append_color(buf, g_r[y][x], g_g[y][x], g_b[y][x]);
         } else if (prev_water && !has_water) {
           buffer_appendz(buf, T_RESET);
         }
