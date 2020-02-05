@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(euler)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -ffast-math")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -ffast-math")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=return-type")
 
