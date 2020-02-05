@@ -375,10 +375,10 @@ float bilinear(bool w[2][2], float q[Y][X],
   return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
 }
 
-float interpolate_u(float u[Y][X], float y, float x) {
+float interpolate_u(float u[Y][X], vec2f uidx) {
   // bilinear interpolation
-  x = clampf(0, x, X-2);
-  y = clampf(0, y, Y-1);
+  float x = clampf(0, uidx.x, X-2);
+  float y = clampf(0, uidx.y, Y-1);
 
   float x_floor;
   float x_frac = modff(x, &x_floor);
@@ -401,10 +401,10 @@ float interpolate_u(float u[Y][X], float y, float x) {
   return bilinear(w, u, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-float interpolate_v(float v[Y][X], float y, float x) {
+float interpolate_v(float v[Y][X], vec2f vidx) {
   // bilinear interpolation
-  x = clampf(0, x, X-1);
-  y = clampf(0, y, Y-2);
+  float x = clampf(0, vidx.x, X-1);
+  float y = clampf(0, vidx.y, Y-2);
 
   float x_floor;
   float x_frac = modff(x, &x_floor);
@@ -427,10 +427,10 @@ float interpolate_v(float v[Y][X], float y, float x) {
   return bilinear(w, v, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-float interpolate_p(float q[Y][X], float y, float x) {
+float interpolate_p(float q[Y][X], vec2f pidx) {
   // bilinear interpolation
-  x = clampf(0, x, X-1);
-  y = clampf(0, y, Y-1);
+  float x = clampf(0, pidx.x, X-1);
+  float y = clampf(0, pidx.y, Y-1);
 
   float x_floor;
   float x_frac = modff(x, &x_floor);
@@ -453,77 +453,47 @@ float interpolate_p(float q[Y][X], float y, float x) {
   return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
+vec2f uidx_to_vidx(vec2f uidx) {
+  return (vec2f){ uidx.x + 0.5f, uidx.y - 0.5f };
+}
+
 void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X-1; ++x) {
+      vec2f uidx = { x, y };
       if (is_water(y,x) || is_water(y,x+1)) {
+        // find the velocity at the sample point
         float dx = u[y][x];
-        // we could check if either of the two squares around each
-        // vertical component is water, but that would mean checking
-        // four squares instead of two, and doing bounds checks.
-        // Let's just consider two because I'm not sure that allowing
-        // fluid to interact diagonally like that actually helps.
-        float div = 0.f;
-        float vv[4] = {};
-        if (is_water(y,x)) {
-          vv[0] = v[y][x];
-          div += 1.f;
-          if (y > 0) {
-            vv[1] = v[y-1][x];
-            div += 1.f;
-          }
-        }
-        if (is_water(y,x+1)) {
-          vv[2] = v[y][x+1];
-          div += 1.f;
-          if (y > 0) {
-            vv[3] = v[y-1][x+1];
-            div += 1.f;
-          }
-        }
-        float dy = (vv[0] + vv[1] + vv[2] + vv[3]) / div;
-        float prev_x = x - dx*dt / k_s;
-        float prev_y = y - dy*dt / k_s;
-
-        out[y][x] = interpolate_u(g_u, prev_y, prev_x);
+        float dy = interpolate_v(v, uidx_to_vidx(uidx));
+        // extrapolate backwards through time to find
+        // where the fluid came from
+        vec2f prev = { x - dx*dt / k_s,
+                       y - dy*dt / k_s };
+        // take the value from there and put it here
+        out[y][x] = interpolate_u(u, prev);
       }
     }
   }
 }
 
+vec2f vidx_to_uidx(vec2f vidx) {
+  return (vec2f){ vidx.x - 0.5f, vidx.y + 0.5f };
+}
+
 void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (size_t y = 0; y < Y-1; ++y) {
     for (size_t x = 0; x < X; ++x) {
+      vec2f vidx = { x, y };
       if (is_water(y,x) || is_water(y+1,x)) {
+        // find the velocity at the sample point
         float dy = v[y][x];
-        // we could check if either of the two squares around each
-        // horizontal component is water, but that would mean checking
-        // four squares instead of two, and doing bounds checks.
-        // Let's just consider two because I'm not sure that allowing
-        // fluid to interact diagonally like that actually helps.
-        float div = 0.f;
-        float uu[4] = {};
-        if (is_water(y,x)) {
-          uu[0] = u[y][x];
-          div += 1.f;
-          if (x > 0) {
-            uu[1] = u[y][x-1];
-            div += 1.f;
-          }
-        }
-        if (is_water(y+1,x)) {
-          uu[2] = u[y+1][x];
-          div += 1.f;
-          if (x > 0) {
-            uu[3] = u[y+1][x-1];
-            div += 1.f;
-          }
-        }
-        float dx = (uu[0] + uu[1] + uu[2] + uu[3]) / div;
-        float prev_x = x - dx*dt / k_s;
-        float prev_y = y - dy*dt / k_s;
-
-        out[y][x] = interpolate_v(g_v, prev_y, prev_x);
+        float dx = interpolate_u(u, vidx_to_uidx(vidx));
+        // extrapolate backwards through time to find
+        // where the fluid came from
+        vec2f prev = { x - dx*dt / k_s,
+                       y - dy*dt / k_s };
+        // take the value from there and put it here
+        out[y][x] = interpolate_v(v, prev);
       }
     }
   }
@@ -533,28 +503,25 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
   for (size_t y = 0; y < Y; ++y) {
     for (size_t x = 0; x < X; ++x) {
       if (is_water(y,x)) {
-        // let's assume we're never advecting something on the grid boundary,
-        // as my pressure solve doesn't check those bounds either
+        // the caller must ensure there is never fluid in a boundary cell
         float dy = (v[y][x] + v[y-1][x]) / 2;
         float dx = (u[y][x] + u[y][x-1]) / 2;
-        float prev_x = x - dx*dt / k_s;
-        float prev_y = y - dy*dt / k_s;
-
-        out[y][x] = interpolate_p(q, prev_y, prev_x);
+        vec2f prev = { x - dx*dt / k_s,
+                       y - dy*dt / k_s };
+        out[y][x] = interpolate_p(q, prev);
       }
     }
   }
 }
 
 vec2f velocity_at(vec2f pos) {
-  float u_x = pos.x / k_s - 1.f;
-  float u_y = pos.y / k_s - 0.5f;
-  float v_x = pos.x / k_s - 0.5f;
-  float v_y = pos.y / k_s - 1.f;
-
+  vec2f uidx = { pos.x / k_s - 1.f,
+                 pos.y / k_s - 0.5f };
+  vec2f vidx = { pos.x / k_s - 0.5f,
+                 pos.y / k_s - 1.f };
   // out-of-bounds is handled in interpolate
-  float x = interpolate_u(g_u, u_y, u_x);
-  float y = interpolate_v(g_v, v_y, v_x);
+  float x = interpolate_u(g_u, uidx);
+  float y = interpolate_v(g_v, vidx);
   return make_v2f(x, y);
 }
 
