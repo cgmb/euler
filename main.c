@@ -918,7 +918,7 @@ void zero_bounds_v(float v[Y][X]) {
   }
 }
 
-float calculate_timestep(float frame_time, float minimum_step) {
+float calculate_timestep(float frame_time) {
   // Bridson suggests a limit of five for stability, but my implementation of
   // advection and extrapolation assume that new fluid cells are within one
   // grid cell of old fluid cells
@@ -929,7 +929,7 @@ float calculate_timestep(float frame_time, float minimum_step) {
   if (max_velocity < (m*k_s / frame_time)) {
     dt = frame_time;
   } else {
-    dt = fmaxf(m*k_s / max_velocity, minimum_step);
+    dt = m*k_s / max_velocity;
   }
   return dt;
 }
@@ -940,11 +940,14 @@ void sim_step() {
   }
 
   const float total_frame_time = 0.1f;
-  const float minimum_step = total_frame_time / 8;
   float frame_time = total_frame_time;
+  int steps = 0;
   do {
-    float dt = calculate_timestep(frame_time, minimum_step);
+    float dt = calculate_timestep(frame_time);
     frame_time -= dt;
+    if (steps++ > 7) {
+      break; // give up on real-time
+    }
 
     advect_markers(dt);
     refresh_marker_counts();
