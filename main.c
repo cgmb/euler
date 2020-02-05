@@ -949,6 +949,8 @@ void sim_step() {
 
     advect_markers(dt);
     refresh_marker_counts();
+
+    // extrapolate values for new fluid cells from their neighbours
     if (g_rainbow_enabled) {
       extrapolate_p(g_r);
       extrapolate_p(g_g);
@@ -960,6 +962,7 @@ void sim_step() {
     zero_bounds_u(g_u);
     zero_bounds_v(g_v);
 
+    // advect fluid properties along the fluid flow
     advect_u(g_u, g_v, dt, g_utmp);
     advect_v(g_u, g_v, dt, g_vtmp);
     if (g_rainbow_enabled) {
@@ -972,11 +975,16 @@ void sim_step() {
       advect_p(g_b, g_u, g_v, dt, g_btmp);
       memcpy(g_b, g_btmp, sizeof(g_b));
     }
+
+    // add acceleration due to gravity
     apply_body_forces(g_vtmp, dt);
 
+    // set velocities constrained by solid boundaries
     zero_bounds_u(g_utmp);
     zero_bounds_v(g_vtmp);
 
+    // project our approximate solution for the updated velocity field
+    // to the nearest divergence-free solution
     project(dt, g_utmp, g_vtmp, g_u, g_v);
   } while (frame_time > 0.f);
 
@@ -1045,7 +1053,7 @@ void draw_rows(buffer* buf) {
       }
     }
     buffer_appendz(buf, T_RESET);
-    buffer_appendz(buf, "\x1b[K"); // clear remainer of line
+    buffer_appendz(buf, "\x1b[K"); // clear remainder of line
     if (y > y_cutoff) {
       buffer_appendz(buf, "\r\n");
     }
