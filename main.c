@@ -12,6 +12,7 @@
 
 #include "math/vec2f.h"
 #include "misc/cmp.h"
+#include "misc/debug.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
 #include "misc/rng.h"
@@ -1176,6 +1177,8 @@ struct timespec wait_until_nsec_from(long desired_interval_nsec,
 }
 
 int main(int argc, char** argv) {
+  enable_fpmath_asserts();
+
   args_t in = parse_args(argc, argv);
   g_rainbow_enabled = in.rainbow;
 

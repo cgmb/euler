@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(euler)
+option(SHERLOCK "Enable expensive debug checks" OFF)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -ffast-math")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
@@ -10,11 +11,16 @@ if(CMAKE_BUILD_TYPE STREQUAL "" OR CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=2")
 endif()
 
+if(${SHERLOCK})
+  add_definitions(-DAE_FLTDEBUG)
+endif()
+
 add_executable(euler
   main.c
   misc/terminal.c
   misc/file.c
   misc/rng.c
+  misc/debug.c
 )
 target_include_directories(euler PRIVATE .)
 target_link_libraries(euler m)
