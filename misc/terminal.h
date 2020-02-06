@@ -12,7 +12,7 @@ void buffer_clear(buffer* buf);
 
 void die(const char* msg);
 
-void u_clear_screen();
+void clear_screen_now();
 
 void clear_screen(buffer* buf);
 void reposition_cursor(buffer* buf);

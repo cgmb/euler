@@ -13,13 +13,11 @@
 static struct termios g_orig_termios;
 
 static void write_stdin(const void* buf, ssize_t count) {
-  ssize_t res = write(STDIN_FILENO, buf, count);
-  if (res != count) {
-    exit(1);
-  }
+  int result = write(STDIN_FILENO, buf, count);
+  (void)result; // todo: handle EINTR
 }
 
-void u_clear_screen() {
+void clear_screen_now() {
   write_stdin("\x1b[2J", 4); // clear
   write_stdin("\x1b[H", 3);  // reposition cursor
 }
@@ -41,12 +39,12 @@ void show_cursor(buffer* buf) {
   buffer_append(buf, "\x1b[?25h", 6);
 }
 
-void u_show_cursor() {
+void show_cursor_now() {
   write_stdin("\x1b[?25h", 6);
 }
 
 void die(const char* msg) {
-  u_clear_screen();
+  clear_screen_now();
   perror(msg);
   exit(1);
 }
@@ -59,7 +57,7 @@ void disable_raw_mode() {
 
 void enable_raw_mode() {
   atexit(disable_raw_mode);
-  atexit(u_show_cursor);
+  atexit(show_cursor_now);
   if (tcgetattr(STDIN_FILENO, &g_orig_termios) == -1) {
     die("failed to enable raw mode");
   }

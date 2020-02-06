@@ -1063,6 +1063,7 @@ void draw(buffer* buf) {
   buffer_clear(buf);
   reposition_cursor(buf);
   draw_rows(buf);
+  hide_cursor(buf);
   buffer_write(buf);
 }
 
@@ -1081,7 +1082,7 @@ bool process_keypress() {
       colorize();
     }
   } else if (c == 'q') {
-    u_clear_screen();
+    clear_screen_now();
     return false;
   }
   return true;
@@ -1118,7 +1119,7 @@ void update_window_size() {
 void handle_window_size_changed(int signal) {
   (void)signal;
   update_window_size();
-  u_clear_screen();
+  clear_screen_now();
 }
 
 struct timespec subtract(struct timespec lhs, struct timespec rhs) {
@@ -1163,7 +1164,7 @@ int main(int argc, char** argv) {
   sim_init(in);
 
   enable_raw_mode();
-  u_clear_screen();
+  clear_screen_now();
   buffer buf = { 0, 0 };
   draw(&buf);
 
