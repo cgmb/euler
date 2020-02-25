@@ -88,15 +88,6 @@ bool g_pause;
 uint32_t g_simulate_steps;
 uint16_t g_frame_count;
 
-// pressure matrix
-typedef struct sparse_entry_t {
-  int8_t a_diag;
-  int8_t a_plus_i;
-  int8_t a_plus_j;
-} sparse_entry_t;
-
-sparse_entry_t g_a[Y][X];
-
 // marker particle data
 #define MAX_MARKER_COUNT (4*Y*X)
 size_t g_markers_length;
@@ -594,11 +585,28 @@ void apply_body_forces(float v[Y][X], float dt) {
   }
 }
 
+// pressure matrix
+typedef struct sparse_entry_t {
+  int8_t a_diag;
+  int8_t a_plus_i;
+  int8_t a_plus_j;
+} sparse_entry_t;
+
+sparse_entry_t g_a[Y][X];
+
 int8_t nonsolid_neighbor_count(int y, int x) {
   // this function is only used on fluid cells, and the edge cells
   // should never be fluid, so no bounds checks required
   return 4 - g_solid[y][x-1] - g_solid[y][x+1]
            - g_solid[y-1][x] - g_solid[y+1][x];
+}
+
+int8_t get_a_plus_i(int y, int x) {
+  return g_a[y][x].a_plus_i;
+}
+
+int8_t get_a_plus_j(int y, int x) {
+  return g_a[y][x].a_plus_j;
 }
 
 int8_t get_a_minus_i(int y, int x) {
@@ -640,8 +648,8 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y, x)) {
         double t = r[y][x]
-          - g_a[y][x-1].a_plus_i * g_precon[y][x-1] * g_q[y][x-1]
-          - g_a[y-1][x].a_plus_j * g_precon[y-1][x] * g_q[y-1][x];
+          - get_a_plus_i(y,x-1) * g_precon[y][x-1] * g_q[y][x-1]
+          - get_a_plus_j(y-1,x) * g_precon[y-1][x] * g_q[y-1][x];
         g_q[y][x] = t * g_precon[y][x];
       }
     }
@@ -653,8 +661,8 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
     for (int x = X; x--;) {
       if (is_fluid(y, x)) {
         double t = g_q[y][x]
-          - g_a[y][x].a_plus_i * g_precon[y][x] * z[y][x+1]
-          - g_a[y][x].a_plus_j * g_precon[y][x] * z[y+1][x];
+          - get_a_plus_i(y,x) * g_precon[y][x] * z[y][x+1]
+          - get_a_plus_j(y,x) * g_precon[y][x] * z[y+1][x];
         z[y][x] = t * g_precon[y][x];
       }
     }
@@ -716,8 +724,8 @@ void apply_a(double s[Y][X], double out[Y][X]) {
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y, x)) {
         out[y][x] = g_a[y][x].a_diag * s[y][x]
-                  + g_a[y][x].a_plus_i * (x+1 < X && is_fluid(y,x+1) ? s[y][x+1] : 0)
-                  + g_a[y][x].a_plus_j * (y+1 < Y && is_fluid(y+1,x) ? s[y+1][x] : 0)
+                  + get_a_plus_i(y,x) * (x+1 < X && is_fluid(y,x+1) ? s[y][x+1] : 0)
+                  + get_a_plus_j(y,x) * (y+1 < Y && is_fluid(y+1,x) ? s[y+1][x] : 0)
                   + get_a_minus_i(y,x) * (x>0 && is_fluid(y,x-1) ? s[y][x-1] : 0)
                   + get_a_minus_j(y,x) * (y>0 && is_fluid(y-1,x) ? s[y-1][x] : 0);
       }
