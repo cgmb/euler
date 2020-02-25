@@ -588,8 +588,6 @@ void apply_body_forces(float v[Y][X], float dt) {
 // pressure matrix
 typedef struct sparse_entry_t {
   int8_t a_diag;
-  int8_t a_plus_i;
-  int8_t a_plus_j;
 } sparse_entry_t;
 
 sparse_entry_t g_a[Y][X];
@@ -602,19 +600,19 @@ int8_t nonsolid_neighbor_count(int y, int x) {
 }
 
 int8_t get_a_plus_i(int y, int x) {
-  return g_a[y][x].a_plus_i;
+  return is_fluid(y,x+1) ? -1 : 0;
 }
 
 int8_t get_a_plus_j(int y, int x) {
-  return g_a[y][x].a_plus_j;
+  return is_fluid(y+1,x) ? -1 : 0;
 }
 
 int8_t get_a_minus_i(int y, int x) {
-  return x>0 ? g_a[y][x-1].a_plus_i : 0;
+  return get_a_plus_i(y, x-1);
 }
 
 int8_t get_a_minus_j(int y, int x) {
-  return y>0 ? g_a[y-1][x].a_plus_j : 0;
+  return get_a_plus_j(y-1, x);
 }
 
 double g_precon[Y][X];
@@ -724,10 +722,10 @@ void apply_a(double s[Y][X], double out[Y][X]) {
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y, x)) {
         out[y][x] = g_a[y][x].a_diag * s[y][x]
-                  + get_a_plus_i(y,x) * (x+1 < X && is_fluid(y,x+1) ? s[y][x+1] : 0)
-                  + get_a_plus_j(y,x) * (y+1 < Y && is_fluid(y+1,x) ? s[y+1][x] : 0)
-                  + get_a_minus_i(y,x) * (x>0 && is_fluid(y,x-1) ? s[y][x-1] : 0)
-                  + get_a_minus_j(y,x) * (y>0 && is_fluid(y-1,x) ? s[y-1][x] : 0);
+                  - (is_fluid(y,x+1) ? s[y][x+1] : 0)
+                  - (is_fluid(y+1,x) ? s[y+1][x] : 0)
+                  - (is_fluid(y,x-1) ? s[y][x-1] : 0)
+                  - (is_fluid(y-1,x) ? s[y-1][x] : 0);
       }
     }
   }
@@ -752,8 +750,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y,x)) {
-        float up = x>0 ? u[y][x-1] : 0;
-        float vp = y>0 ? v[y-1][x] : 0;
+        float up = u[y][x-1];
+        float vp = v[y-1][x];
         d0[y][x] = c * invf(k_s) * (u[y][x] - up + v[y][x] - vp);
       }
     }
@@ -764,8 +762,6 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y, x)) {
         g_a[y][x].a_diag = nonsolid_neighbor_count(y, x);
-        g_a[y][x].a_plus_i = x<X-1 && is_fluid(y,x+1) ? -1 : 0;
-        g_a[y][x].a_plus_j = y<Y-1 && is_fluid(y+1,x) ? -1 : 0;
       }
     }
   }
