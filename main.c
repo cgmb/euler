@@ -125,11 +125,11 @@ void refresh_marker_counts() {
   }
 }
 
-bool was_water(size_t y, size_t x) {
+bool was_water(int y, int x) {
   return g_old_marker_count[y][x] > 0;
 }
 
-bool is_water(size_t y, size_t x) {
+bool is_water(int y, int x) {
   return g_marker_count[y][x] > 0;
 }
 
@@ -199,9 +199,9 @@ void extrapolate(float q[Y][X], celltype_t type) {
 }
 
 void colorize() {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      if (is_water(y,x)) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
+      if (p_valid(g_valid, v2i(x,y))) {
         float t = 0.f;
         if (!g_source[y][x]) {
           t = (x + y) * 6.f / k_initial_color_period;
@@ -231,8 +231,8 @@ void sim_init(args_t in) {
   // parse the scenario file to init our fluid
   int i = 0;
   bool fluid[Y][X] = {};
-  for (size_t y = Y-2; y > 0 && i < length; --y) {
-    size_t x;
+  for (int y = Y-2; y > 0 && i < length; --y) {
+    int x;
     for (x = 1; x < X-1 && i < length; ++x) {
       char c = contents[i++];
       if (c == '\n') {
@@ -256,21 +256,21 @@ void sim_init(args_t in) {
   release_file(contents);
 
   // add sinks around the outside so we have fewer edge cases
-  for (size_t y = 0; y < Y; ++y) {
+  for (int y = 0; y < Y; ++y) {
     g_sink[y][0] = true;
     g_sink[y][X-1] = true;
   }
-  for (size_t x = 0; x < X; ++x) {
+  for (int x = 0; x < X; ++x) {
     g_sink[0][x] = true;
     g_sink[Y-1][x] = true;
   }
 
   // setup fluid markers, 4 per cell, jittered
   size_t idx = 0;
-  for (size_t i = 0; i < X; ++i) {
-    for (size_t j = 0; j < Y; ++j) {
+  for (int i = 0; i < X; ++i) {
+    for (int j = 0; j < Y; ++j) {
       if (fluid[j][i]) {
-        for (size_t k = 0; k < 4; ++k) {
+        for (int k = 0; k < 4; ++k) {
           float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
           float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
           g_markers[idx++] = v2f_mulf(k_s, v2f(x,y));
@@ -295,8 +295,8 @@ void update_fluid_sources() {
   g_source_exhausted |= (g_markers_length == MAX_MARKER_COUNT-1);
 
   float t = 0.6f / k_source_color_period * g_frame_count;
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (g_source[y][x]) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
           g_markers[g_markers_length++] = v2f_mulf(k_s, v2f(x+randf(), y+randf()));
@@ -429,15 +429,15 @@ float interpolate_p(float q[Y][X], vec2f pidx) {
   return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
 
-vec2f uidx_to_vidx(vec2f uidx) {
+vec2f uidx_to_vidx(vec2i uidx) {
   return (vec2f){ uidx.x + 0.5f, uidx.y - 0.5f };
 }
 
 void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X-1; ++x) {
-      vec2f uidx = { x, y };
-      if (is_water(y,x) || is_water(y,x+1)) {
+  for (int y = 0; y < U_Y; ++y) {
+    for (int x = 0; x < U_X; ++x) {
+      vec2i uidx = { x, y };
+      if (u_valid(g_valid, uidx)) {
         // find the velocity at the sample point
         float dx = u[y][x];
         float dy = interpolate_v(v, uidx_to_vidx(uidx));
@@ -452,15 +452,15 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   }
 }
 
-vec2f vidx_to_uidx(vec2f vidx) {
+vec2f vidx_to_uidx(vec2i vidx) {
   return (vec2f){ vidx.x - 0.5f, vidx.y + 0.5f };
 }
 
 void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      vec2f vidx = { x, y };
-      if (is_water(y,x) || is_water(y+1,x)) {
+  for (int y = 0; y < V_Y; ++y) {
+    for (int x = 0; x < V_X; ++x) {
+      vec2i vidx = { x, y };
+      if (v_valid(g_valid, vidx)) {
         // find the velocity at the sample point
         float dy = v[y][x];
         float dx = interpolate_u(u, vidx_to_uidx(vidx));
@@ -476,9 +476,10 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
 }
 
 void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      if (is_water(y,x)) {
+  for (int y = 0; y < P_Y; ++y) {
+    for (int x = 0; x < P_X; ++x) {
+      vec2i pidx = { x, y };
+      if (p_valid(g_valid, pidx)) {
         // the caller must ensure there is never fluid in a boundary cell
         float dy = (v[y][x] + v[y-1][x]) / 2;
         float dx = (u[y][x] + u[y][x-1]) / 2;
@@ -590,25 +591,25 @@ void advect_markers(float dt) {
 }
 
 void apply_body_forces(float v[Y][X], float dt) {
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < V_Y; ++y) {
+    for (int x = 0; x < V_X; ++x) {
       v[y][x] += k_g * dt;
     }
   }
 }
 
-int8_t nonsolid_neighbor_count(size_t y, size_t x) {
+int8_t nonsolid_neighbor_count(int y, int x) {
   // this function is only used on fluid cells, and the edge cells
   // should never be fluid, so no bounds checks required
   return 4 - g_solid[y][x-1] - g_solid[y][x+1]
            - g_solid[y-1][x] - g_solid[y+1][x];
 }
 
-int8_t get_a_minus_i(size_t y, size_t x) {
+int8_t get_a_minus_i(int y, int x) {
   return x>0 ? g_a[y][x-1].a_plus_i : 0;
 }
 
-int8_t get_a_minus_j(size_t y, size_t x) {
+int8_t get_a_minus_j(int y, int x) {
   return y>0 ? g_a[y-1][x].a_plus_j : 0;
 }
 
@@ -621,8 +622,8 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   // L = F * E_inv + E
 
   // calculate E_inv (precon)
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         double a = g_a[y][x].a_diag;
         double b = sq(get_a_minus_i(y,x) * g_precon[y][x-1]);
@@ -639,8 +640,8 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
 
   // solve Lq = r
   memset(g_q, '\0', sizeof(double)*Y*X);
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         double t = r[y][x]
           - g_a[y][x-1].a_plus_i * g_precon[y][x-1] * g_q[y][x-1]
@@ -652,8 +653,8 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
 
   // solve Lᵀz = q
   memset(z, '\0', sizeof(double)*Y*X);
-  for (size_t y = Y; y--;) {
-    for (size_t x = X; x--;) {
+  for (int y = Y; y--;) {
+    for (int x = X; x--;) {
       if (is_water(y, x)) {
         double t = g_q[y][x]
           - g_a[y][x].a_plus_i * g_precon[y][x] * z[y][x+1]
@@ -666,8 +667,8 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
 
 double dot(double a[Y][X], double b[Y][X]) {
   double total = 0.f;
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         total += a[y][x] * b[y][x];
       }
@@ -677,8 +678,8 @@ double dot(double a[Y][X], double b[Y][X]) {
 }
 
 bool all_zero(double r[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         if (r[y][x] != 0.f) {
           return false;
@@ -691,8 +692,8 @@ bool all_zero(double r[Y][X]) {
 
 double inf_norm(double r[Y][X]) {
   double maximum = 0.f;
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         double a = fabs(r[y][x]);
         if (a > maximum) {
@@ -705,8 +706,8 @@ double inf_norm(double r[Y][X]) {
 }
 
 void update_search(double s[Y][X], double z[Y][X], double beta) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         s[y][x] = z[y][x] + beta * s[y][x];
       }
@@ -715,8 +716,8 @@ void update_search(double s[Y][X], double z[Y][X], double beta) {
 }
 
 void apply_a(double s[Y][X], double out[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         out[y][x] = g_a[y][x].a_diag * s[y][x]
                   + g_a[y][x].a_plus_i * (x+1 < X && is_water(y,x+1) ? s[y][x+1] : 0)
@@ -730,8 +731,8 @@ void apply_a(double s[Y][X], double out[Y][X]) {
 
 // c += a*b
 void fmadd(double a[Y][X], double b, double c[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         c[y][x] += a[y][x] * b;
       }
@@ -744,8 +745,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   double d0[Y][X] = {}; // divergence * c
 
   // calculate d0
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y,x)) {
         float up = x>0 ? u[y][x-1] : 0;
         float vp = y>0 ? v[y-1][x] : 0;
@@ -755,8 +756,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   }
 
   // calculate A
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y, x)) {
         g_a[y][x].a_diag = nonsolid_neighbor_count(y, x);
         g_a[y][x].a_plus_i = x<X-1 && is_water(y,x+1) ? -1 : 0;
@@ -765,7 +766,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     }
   }
 
-  const size_t max_iterations = 100;
+  const int max_iterations = 100;
   const double tol = 1e-6f;
 
   // conjugate gradient
@@ -779,7 +780,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     memcpy(s, z, sizeof(s));
 
     double sigma = dot(z,r);
-    for (size_t i = 0; i < max_iterations; ++i) {
+    for (int i = 0; i < max_iterations; ++i) {
       apply_a(s, z);
 
       double alpha = sigma / dot(z,s);
@@ -803,8 +804,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // This step is not in Bridson's notes, but it fixes some weird artifacts.
   // Without it, the pressure solve sometimes introduced negative pressures
   // to eliminate divergence at solid boundaries, causing extreme stickyness
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < Y; ++y) {
+    for (int x = 0; x < X; ++x) {
       if (is_water(y,x) && p[y][x] < 0.f) {
         p[y][x] = 0.f;
       }
@@ -812,8 +813,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   }
 
   // update horizontal velocities
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X-1; ++x) {
+  for (int y = 0; y < U_Y; ++y) {
+    for (int x = 0; x < U_X; ++x) {
       if (g_solid[y][x] || g_solid[y][x+1]) {
         uout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y,x+1)) {
@@ -825,8 +826,8 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   }
 
   // update vertical velocities
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < V_Y; ++y) {
+    for (int x = 0; x < V_X; ++x) {
       if (g_solid[y][x] || g_solid[y+1][x]) {
         vout[y][x] = 0.f;
       } else if (is_water(y,x) || is_water(y+1,x)) {
@@ -853,10 +854,10 @@ float maxsq(float q[Y][X], celltype_t type) {
 }
 
 void zero_bounds_u(float u[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X-1; ++x) {
+  for (int y = 0; y < U_Y; ++y) {
+    for (int x = 0; x < U_X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      bool is_air = !is_water(y,x) && !is_water(y,x+1);
+      bool is_air = !u_valid(g_valid, v2i(x,y));
       if (is_air || g_solid[y][x] || g_solid[y][x+1]) {
         u[y][x] = 0.f;
       }
@@ -865,10 +866,10 @@ void zero_bounds_u(float u[Y][X]) {
 }
 
 void zero_bounds_v(float v[Y][X]) {
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
+  for (int y = 0; y < V_Y; ++y) {
+    for (int x = 0; x < V_X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      bool is_air = !is_water(y,x) && !is_water(y+1,x);
+      bool is_air = !v_valid(g_valid, v2i(x,y));
       if (is_air || g_solid[y][x] || g_solid[y+1][x]) {
         v[y][x] = 0.f;
       }
