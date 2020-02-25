@@ -12,7 +12,7 @@
 
 #include "math/vec2f.h"
 #include "math/vec2i.h"
-#include "misc/cmp.h"
+#include "misc/util.h"
 #include "misc/debug.h"
 #include "misc/terminal.h"
 #include "misc/file.h"
@@ -58,10 +58,6 @@ typedef struct args_t {
 const float k_s = 1.f; // side length
 const float k_d = 1.f; // density
 const float k_g = -10.f; // gravity
-
-float invf(float x) {
-  return 1.f / x;
-}
 
 // All arrays are the same size so functions like bilinear interpolation can
 // work on any array. The real size is smaller and is listed in the comments.
@@ -130,16 +126,6 @@ uint8_t g_old_marker_count[Y][X];
 // alternate names
 #define g_valid      g_marker_count
 #define g_prev_valid g_old_marker_count
-
-float clampf(float min, float x, float max) {
-  if (x < min) {
-    return min;
-  } else if (x > max) {
-    return max;
-  } else {
-    return x;
-  }
-}
 
 void refresh_marker_counts() {
   memcpy(g_old_marker_count, g_marker_count, sizeof(g_marker_count));
@@ -308,7 +294,7 @@ void sim_init(args_t in) {
         for (size_t k = 0; k < 4; ++k) {
           float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
           float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
-          g_markers[idx++] = mulf_v2f(k_s, make_v2f(x,y));
+          g_markers[idx++] = v2f_mulf(k_s, v2f(x,y));
         }
       }
     }
@@ -334,7 +320,7 @@ void update_fluid_sources() {
     for (size_t x = 0; x < X; ++x) {
       if (g_source[y][x]) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
-          g_markers[g_markers_length++] = mulf_v2f(k_s, make_v2f(x+randf(), y+randf()));
+          g_markers[g_markers_length++] = v2f_mulf(k_s, v2f(x+randf(), y+randf()));
           g_marker_count[y][x]++;
           g_source_exhausted |= (g_markers_length == MAX_MARKER_COUNT-1);
         }
@@ -533,7 +519,7 @@ vec2f velocity_at(vec2f pos) {
   // out-of-bounds is handled in interpolate
   float x = interpolate_u(g_u, uidx);
   float y = interpolate_v(g_v, vidx);
-  return make_v2f(x, y);
+  return v2f(x,y);
 }
 
 float time_to(float p0, float p1, float v) {
@@ -585,7 +571,7 @@ void advect_markers(float dt) {
         // entered new horizontal cell
         if (g_solid[y_idx][nx_idx + x_idx_offset]) {
           // hit! we're done going horizontal
-          p = add_v2f(p, mulf_v2f(t_prev, v));
+          p = v2f_add(p, v2f_mulf(t_prev, v));
           dt -= t_prev;
           t_near = 0;
           v.x = 0.f;
@@ -602,7 +588,7 @@ void advect_markers(float dt) {
         // entered new vertical cell
         if (g_solid[ny_idx + y_idx_offset][x_idx]) {
           // hit! we're done going vertical
-          p = add_v2f(p, mulf_v2f(t_prev, v));
+          p = v2f_add(p, v2f_mulf(t_prev, v));
           dt -= t_prev;
           t_near = 0;
           v.y = 0.f;
@@ -619,11 +605,8 @@ void advect_markers(float dt) {
       t_prev = t_near;
       t_near = fminf(t_x, t_y);
     }
-    if (t_near < FLT_MAX) {
-      g_markers[i] = add_v2f(p, mulf_v2f(dt, v));
-    } else {
-      g_markers[i] = add_v2f(p, mulf_v2f(t_prev, v));
-    }
+    float t = (t_near < FLT_MAX) ? dt : t_prev;
+    g_markers[i] = v2f_add(p, v2f_mulf(t, v));
   }
 }
 

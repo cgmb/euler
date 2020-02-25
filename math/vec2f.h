@@ -5,25 +5,24 @@ typedef struct vec2f {
   float y;
 } vec2f;
 
-static inline vec2f mulf_v2f(float s, vec2f v) {
+static inline vec2f v2f_mulf(float s, vec2f v) {
   v.x *= s;
   v.y *= s;
   return v;
 }
 
-static inline vec2f add_v2f(vec2f a, vec2f b) {
+static inline vec2f v2f_add(vec2f a, vec2f b) {
   a.x += b.x;
   a.y += b.y;
   return a;
 }
 
-static inline vec2f sub_v2f(vec2f a, vec2f b) {
+static inline vec2f v2f_sub(vec2f a, vec2f b) {
   a.x -= b.x;
   a.y -= b.y;
   return a;
 }
 
-static inline vec2f make_v2f(float x, float y) {
-  vec2f v = {x, y};
-  return v;
+static inline vec2f v2f(float x, float y) {
+  return (vec2f){x, y};
 }
