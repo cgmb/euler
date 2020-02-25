@@ -27,3 +27,11 @@ static inline float clampf(float min, float x, float max) {
     return x;
   }
 }
+
+static inline float sqf(float x) {
+  return x*x;
+}
+
+static inline double sq(double x) {
+  return x*x;
+}

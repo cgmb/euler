@@ -160,6 +160,15 @@ bool valid(uint8_t p_validity[Y][X], vec2i idx, celltype_t type) {
   }
 }
 
+vec2i grid_size(celltype_t type) {
+  switch (type) {
+    default: assert(false);
+    case P: return v2i(P_X, P_Y);
+    case U: return v2i(U_X, U_Y);
+    case V: return v2i(V_X, V_Y);
+  }
+}
+
 float valid_neighbor_average(float q[Y][X], vec2i lower, vec2i upper, celltype_t type) {
   float total = 0.f;
   int count = 0;
@@ -614,10 +623,6 @@ int8_t get_a_minus_j(size_t y, size_t x) {
   return y>0 ? g_a[y-1][x].a_plus_j : 0;
 }
 
-double sq(double x) {
-  return x*x;
-}
-
 double g_precon[Y][X];
 double g_q[Y][X];
 
@@ -844,24 +849,12 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   }
 }
 
-float maxabs_u(float q[Y][X]) {
+float maxsq(float q[Y][X], celltype_t type) {
+  vec2i size = grid_size(type);
   float max = 0;
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X-1; ++x) {
-      float value = fabsf(q[y][x]);
-      if (value > max) {
-        max = value;
-      }
-    }
-  }
-  return max;
-}
-
-float maxabs_v(float q[Y][X]) {
-  float max = 0;
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      float value = fabsf(q[y][x]);
+  for (int y = 0; y < size.y; ++y) {
+    for (int x = 0; x < size.x; ++x) {
+      float value = sqf(q[y][x]);
       if (value > max) {
         max = value;
       }
@@ -901,7 +894,7 @@ float calculate_timestep(float frame_time) {
   const float m = 0.75f; // maximum number of cells to traverse in one step
 
   float dt;
-  float max_velocity = sqrtf(sq(maxabs_u(g_u)) + sq(maxabs_v(g_v)));
+  float max_velocity = sqrtf(maxsq(g_u, U) + maxsq(g_v, V));
   if (max_velocity < (m*k_s / frame_time)) {
     dt = frame_time;
   } else {
