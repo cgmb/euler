@@ -184,29 +184,18 @@ float valid_neighbor_average(float q[Y][X], vec2i lower, vec2i upper, celltype_t
   return total / count;
 }
 
-void extrapolate(float q[Y][X], vec2i max, celltype_t type) {
-  for (int y = 0; y < max.y; ++y) {
-    for (int x = 0; x < max.x; ++x) {
+void extrapolate(float q[Y][X], celltype_t type) {
+  vec2i size = grid_size(type);
+  for (int y = 0; y < size.y; ++y) {
+    for (int x = 0; x < size.x; ++x) {
       vec2i i = { x, y };
       if (!valid(g_prev_valid, i, type) && valid(g_valid, i, type)) {
         vec2i lower = v2i(max_i(x-1, 0),     max_i(y-1, 0));
-        vec2i upper = v2i(min_i(x+1, max.x), min_i(y+1, max.y));
+        vec2i upper = v2i(min_i(x+1, size.x-1), min_i(y+1, size.y-1));
         q[y][x] = valid_neighbor_average(q, lower, upper, type);
       }
     }
   }
-}
-
-void extrapolate_u(float u[Y][X]) {
-  extrapolate(u, v2i(U_X,U_Y), U);
-}
-
-void extrapolate_v(float v[Y][X]) {
-  extrapolate(v, v2i(V_X,V_Y), V);
-}
-
-void extrapolate_p(float q[Y][X]) {
-  extrapolate(q, v2i(P_X,P_Y), P);
 }
 
 void colorize() {
@@ -923,13 +912,13 @@ void sim_step() {
 
     // extrapolate values for new fluid cells from their neighbours
     if (g_rainbow_enabled) {
-      extrapolate_p(g_r);
-      extrapolate_p(g_g);
-      extrapolate_p(g_b);
+      extrapolate(g_r, P);
+      extrapolate(g_g, P);
+      extrapolate(g_b, P);
     }
     update_fluid_sources();
-    extrapolate_u(g_u);
-    extrapolate_v(g_v);
+    extrapolate(g_u, U);
+    extrapolate(g_v, V);
     zero_bounds_u(g_u);
     zero_bounds_v(g_v);
 
