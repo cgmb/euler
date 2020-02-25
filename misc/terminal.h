@@ -6,6 +6,7 @@ typedef struct buffer {
 } buffer;
 
 void buffer_append(buffer* buf, const char* s, int len);
+void buffer_appendz(buffer* buf, const char* s);
 void buffer_free(buffer* buf);
 void buffer_write(buffer* buf);
 void buffer_clear(buffer* buf);

@@ -10,37 +10,45 @@
 
 // http://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 
+// Terminal Control Codes
+#define T_CLEAR             "\x1b[2J"
+#define T_REPOSITION_CURSOR "\x1b[H"
+#define T_SHOW_CURSOR       "\x1b[?25h"
+#define T_HIDE_CURSOR       "\x1b[?25l"
+
 static struct termios g_orig_termios;
 
-static void write_stdin(const void* buf, ssize_t count) {
+static void write_stdin(const char* buf, ssize_t count) {
   int result = write(STDIN_FILENO, buf, count);
   (void)result; // todo: handle EINTR
 }
 
+static void write_stdinz(const char* buf) {
+  write_stdin(buf, strlen(buf));
+}
+
 void clear_screen_now() {
-  write_stdin("\x1b[2J", 4); // clear
-  write_stdin("\x1b[H", 3);  // reposition cursor
+  write_stdinz(T_CLEAR T_REPOSITION_CURSOR);
 }
 
 void clear_screen(buffer* buf) {
-  buffer_append(buf, "\x1b[2J", 4); // clear
-  buffer_append(buf, "\x1b[H", 3);  // reposition cursor
+  buffer_appendz(buf, T_CLEAR T_REPOSITION_CURSOR);
 }
 
 void reposition_cursor(buffer* buf) {
-  buffer_append(buf, "\x1b[H", 3);  // reposition cursor
+  buffer_appendz(buf, T_REPOSITION_CURSOR);
 }
 
 void hide_cursor(buffer* buf) {
-  buffer_append(buf, "\x1b[?25l", 6);
+  buffer_appendz(buf, T_HIDE_CURSOR);
 }
 
 void show_cursor(buffer* buf) {
-  buffer_append(buf, "\x1b[?25h", 6);
+  buffer_appendz(buf, T_SHOW_CURSOR);
 }
 
 void show_cursor_now() {
-  write_stdin("\x1b[?25h", 6);
+  write_stdinz(T_SHOW_CURSOR);
 }
 
 void die(const char* msg) {
@@ -85,6 +93,10 @@ void buffer_append(buffer* buf, const char* s, int len) {
   memcpy(&data[buf->len], s, len);
   buf->data = data;
   buf->len += len;
+}
+
+void buffer_appendz(buffer* buf, const char* s) {
+  buffer_append(buf, s, strlen(s));
 }
 
 void buffer_write(buffer* buf) {

@@ -1015,10 +1015,6 @@ void buffer_append_color(buffer* buf, float r, float g, float b) {
   buffer_append(buf, tmp, length);
 }
 
-void buffer_appendz(buffer* buf, const char* s) {
-  buffer_append(buf, s, strlen(s));
-}
-
 void draw_rows(buffer* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol_idx = 3;
