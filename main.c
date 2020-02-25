@@ -12,6 +12,7 @@
 
 #include "math/vec2f.h"
 #include "math/vec2i.h"
+#include "misc/color.h"
 #include "misc/util.h"
 #include "misc/debug.h"
 #include "misc/terminal.h"
@@ -70,26 +71,6 @@ float g_vtmp[Y][X]; // [Y-1][X]
 bool g_solid[Y][X];
 bool g_source[Y][X];
 bool g_sink[Y][X];
-
-// https://en.wikipedia.org/wiki/HSL_and_HSV
-float hsv_basis(float t) {
-  // periodic function, repeats after t=[0,6]
-  // returns value in range of [0,1]
-  t -= 6.f*floorf(1.f/6*t);
-  if (t < 0.f) {
-    t += 6.f;
-  }
-
-  if (t < 1.f) {
-    return t;
-  } else if (t < 3.f) {
-    return 1.f;
-  } else if (t < 4.f) {
-    return 4.f - t;
-  } else {
-    return 0.f;
-  }
-}
 
 // color data
 bool g_rainbow_enabled;
@@ -991,15 +972,6 @@ void sim_step() {
   g_frame_count++;
 }
 
-int float_to_byte_color(float x) {
-  x = clampf(0.f, x, nextafterf(1.f, 0.f));
-  return (int)256.f*x;
-}
-
-float linear_to_sRGB(float x) {
-  return powf(x, 1/2.2f); // approximation
-}
-
 void buffer_append_color(buffer_t* buf, float r, float g, float b) {
   char tmp[20];
   int r_out = float_to_byte_color(linear_to_sRGB(r));
@@ -1007,7 +979,7 @@ void buffer_append_color(buffer_t* buf, float r, float g, float b) {
   int b_out = float_to_byte_color(linear_to_sRGB(b));
   int length = snprintf(tmp, sizeof(tmp), "\x1B[38;2;%d;%d;%dm", r_out, g_out, b_out);
   if (length < 0 || length >= (int)sizeof(tmp)) {
-    die("sprintf");
+    die("failed to format color");
   }
   buffer_append(buf, tmp, length);
 }
