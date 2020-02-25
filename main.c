@@ -125,18 +125,14 @@ void refresh_marker_counts() {
   }
 }
 
-bool was_water(int y, int x) {
-  return g_old_marker_count[y][x] > 0;
-}
-
-bool is_water(int y, int x) {
-  return g_marker_count[y][x] > 0;
-}
-
 bool p_valid(uint8_t p_validity[Y][X], vec2i pidx) {
   assert(pidx.x < X);
   assert(pidx.y < Y);
   return p_validity[pidx.y][pidx.x] != 0;
+}
+
+bool is_fluid(int y, int x) {
+  return p_valid(g_valid, v2i(x,y));
 }
 
 bool u_valid(uint8_t p_validity[Y][X], vec2i uidx) {
@@ -369,10 +365,10 @@ float interpolate_u(float u[Y][X], vec2f uidx) {
   // bilinearly interpolate between the 4 surrounding points, excluding
   // any points that do not have water
   bool w[2][2];
-  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori,x_floori+1);
-  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori,x_ceili+1);
-  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili,x_floori+1);
-  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili,x_ceili+1);
+  w[0][0] = is_fluid(y_floori,x_floori) || is_fluid(y_floori,x_floori+1);
+  w[0][1] = is_fluid(y_floori,x_ceili) || is_fluid(y_floori,x_ceili+1);
+  w[1][0] = is_fluid(y_ceili,x_floori) || is_fluid(y_ceili,x_floori+1);
+  w[1][1] = is_fluid(y_ceili,x_ceili) || is_fluid(y_ceili,x_ceili+1);
 
   return bilinear(w, u, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
@@ -395,10 +391,10 @@ float interpolate_v(float v[Y][X], vec2f vidx) {
   // bilinearly interpolate between the 4 surrounding points, excluding
   // any points that do not have water
   bool w[2][2];
-  w[0][0] = is_water(y_floori,x_floori) || is_water(y_floori+1,x_floori);
-  w[0][1] = is_water(y_floori,x_ceili) || is_water(y_floori+1,x_ceili);
-  w[1][0] = is_water(y_ceili,x_floori) || is_water(y_ceili+1,x_floori);
-  w[1][1] = is_water(y_ceili,x_ceili) || is_water(y_ceili+1,x_ceili);
+  w[0][0] = is_fluid(y_floori,x_floori) || is_fluid(y_floori+1,x_floori);
+  w[0][1] = is_fluid(y_floori,x_ceili) || is_fluid(y_floori+1,x_ceili);
+  w[1][0] = is_fluid(y_ceili,x_floori) || is_fluid(y_ceili+1,x_floori);
+  w[1][1] = is_fluid(y_ceili,x_ceili) || is_fluid(y_ceili+1,x_ceili);
 
   return bilinear(w, v, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
@@ -421,10 +417,10 @@ float interpolate_p(float q[Y][X], vec2f pidx) {
   // bilinearly interpolate between the 4 surrounding points, excluding
   // any points that do not have water
   bool w[2][2];
-  w[0][0] = is_water(y_floori,x_floori);
-  w[0][1] = is_water(y_floori,x_ceili);
-  w[1][0] = is_water(y_ceili,x_floori);
-  w[1][1] = is_water(y_ceili,x_ceili);
+  w[0][0] = is_fluid(y_floori,x_floori);
+  w[0][1] = is_fluid(y_floori,x_ceili);
+  w[1][0] = is_fluid(y_ceili,x_floori);
+  w[1][1] = is_fluid(y_ceili,x_ceili);
 
   return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
 }
@@ -624,7 +620,7 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   // calculate E_inv (precon)
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         double a = g_a[y][x].a_diag;
         double b = sq(get_a_minus_i(y,x) * g_precon[y][x-1]);
         double c = sq(get_a_minus_j(y,x) * g_precon[y-1][x]);
@@ -642,7 +638,7 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   memset(g_q, '\0', sizeof(double)*Y*X);
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         double t = r[y][x]
           - g_a[y][x-1].a_plus_i * g_precon[y][x-1] * g_q[y][x-1]
           - g_a[y-1][x].a_plus_j * g_precon[y-1][x] * g_q[y-1][x];
@@ -655,7 +651,7 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   memset(z, '\0', sizeof(double)*Y*X);
   for (int y = Y; y--;) {
     for (int x = X; x--;) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         double t = g_q[y][x]
           - g_a[y][x].a_plus_i * g_precon[y][x] * z[y][x+1]
           - g_a[y][x].a_plus_j * g_precon[y][x] * z[y+1][x];
@@ -669,7 +665,7 @@ double dot(double a[Y][X], double b[Y][X]) {
   double total = 0.f;
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         total += a[y][x] * b[y][x];
       }
     }
@@ -680,7 +676,7 @@ double dot(double a[Y][X], double b[Y][X]) {
 bool all_zero(double r[Y][X]) {
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         if (r[y][x] != 0.f) {
           return false;
         }
@@ -694,7 +690,7 @@ double inf_norm(double r[Y][X]) {
   double maximum = 0.f;
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         double a = fabs(r[y][x]);
         if (a > maximum) {
           maximum = a;
@@ -708,7 +704,7 @@ double inf_norm(double r[Y][X]) {
 void update_search(double s[Y][X], double z[Y][X], double beta) {
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         s[y][x] = z[y][x] + beta * s[y][x];
       }
     }
@@ -718,12 +714,12 @@ void update_search(double s[Y][X], double z[Y][X], double beta) {
 void apply_a(double s[Y][X], double out[Y][X]) {
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         out[y][x] = g_a[y][x].a_diag * s[y][x]
-                  + g_a[y][x].a_plus_i * (x+1 < X && is_water(y,x+1) ? s[y][x+1] : 0)
-                  + g_a[y][x].a_plus_j * (y+1 < Y && is_water(y+1,x) ? s[y+1][x] : 0)
-                  + get_a_minus_i(y,x) * (x>0 && is_water(y,x-1) ? s[y][x-1] : 0)
-                  + get_a_minus_j(y,x) * (y>0 && is_water(y-1,x) ? s[y-1][x] : 0);
+                  + g_a[y][x].a_plus_i * (x+1 < X && is_fluid(y,x+1) ? s[y][x+1] : 0)
+                  + g_a[y][x].a_plus_j * (y+1 < Y && is_fluid(y+1,x) ? s[y+1][x] : 0)
+                  + get_a_minus_i(y,x) * (x>0 && is_fluid(y,x-1) ? s[y][x-1] : 0)
+                  + get_a_minus_j(y,x) * (y>0 && is_fluid(y-1,x) ? s[y-1][x] : 0);
       }
     }
   }
@@ -733,7 +729,7 @@ void apply_a(double s[Y][X], double out[Y][X]) {
 void fmadd(double a[Y][X], double b, double c[Y][X]) {
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         c[y][x] += a[y][x] * b;
       }
     }
@@ -747,7 +743,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // calculate d0
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y,x)) {
+      if (is_fluid(y,x)) {
         float up = x>0 ? u[y][x-1] : 0;
         float vp = y>0 ? v[y-1][x] : 0;
         d0[y][x] = c * invf(k_s) * (u[y][x] - up + v[y][x] - vp);
@@ -758,10 +754,10 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // calculate A
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y, x)) {
+      if (is_fluid(y, x)) {
         g_a[y][x].a_diag = nonsolid_neighbor_count(y, x);
-        g_a[y][x].a_plus_i = x<X-1 && is_water(y,x+1) ? -1 : 0;
-        g_a[y][x].a_plus_j = y<Y-1 && is_water(y+1,x) ? -1 : 0;
+        g_a[y][x].a_plus_i = x<X-1 && is_fluid(y,x+1) ? -1 : 0;
+        g_a[y][x].a_plus_j = y<Y-1 && is_fluid(y+1,x) ? -1 : 0;
       }
     }
   }
@@ -806,7 +802,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // to eliminate divergence at solid boundaries, causing extreme stickyness
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (is_water(y,x) && p[y][x] < 0.f) {
+      if (is_fluid(y,x) && p[y][x] < 0.f) {
         p[y][x] = 0.f;
       }
     }
@@ -817,7 +813,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     for (int x = 0; x < U_X; ++x) {
       if (g_solid[y][x] || g_solid[y][x+1]) {
         uout[y][x] = 0.f;
-      } else if (is_water(y,x) || is_water(y,x+1)) {
+      } else if (is_fluid(y,x) || is_fluid(y,x+1)) {
         uout[y][x] = u[y][x] - invf(k_d*k_s) * dt * (p[y][x+1] - p[y][x]);
       } else { // both cells are air
         uout[y][x] = 0.f;
@@ -830,7 +826,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
     for (int x = 0; x < V_X; ++x) {
       if (g_solid[y][x] || g_solid[y+1][x]) {
         vout[y][x] = 0.f;
-      } else if (is_water(y,x) || is_water(y+1,x)) {
+      } else if (is_fluid(y,x) || is_fluid(y+1,x)) {
         vout[y][x] = v[y][x] - invf(k_d*k_s) * dt * (p[y+1][x] - p[y][x]);
       } else { // both cells are air
         vout[y][x] = 0.f;
