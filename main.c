@@ -1003,7 +1003,7 @@ float linear_to_sRGB(float x) {
   return powf(x, 1/2.2f); // approximation
 }
 
-void buffer_append_color(buffer* buf, float r, float g, float b) {
+void buffer_append_color(buffer_t* buf, float r, float g, float b) {
   char tmp[20];
   int r_out = float_to_byte_color(linear_to_sRGB(r));
   int g_out = float_to_byte_color(linear_to_sRGB(g));
@@ -1015,7 +1015,7 @@ void buffer_append_color(buffer* buf, float r, float g, float b) {
   buffer_append(buf, tmp, length);
 }
 
-void draw_rows(buffer* buf) {
+void draw_rows(buffer_t* buf) {
   const char* symbol[4] = {" ","o","O","0"};
   const uint8_t max_symbol_idx = 3;
   const int y_cutoff = max_i((int)Y-1 - g_wy, 1);
@@ -1055,7 +1055,7 @@ void draw_rows(buffer* buf) {
   }
 }
 
-void draw(buffer* buf) {
+void draw(buffer_t* buf) {
   buffer_clear(buf);
   reposition_cursor(buf);
   draw_rows(buf);
@@ -1161,7 +1161,7 @@ int main(int argc, char** argv) {
 
   enable_raw_mode();
   clear_screen_now();
-  buffer buf = { 0, 0 };
+  buffer_t buf = { 0, 0 };
   draw(&buf);
 
   struct timespec interval_start;

@@ -1,24 +1,24 @@
 #pragma once
 
-typedef struct buffer {
+typedef struct buffer_t {
   char* data;
   int len;
-} buffer;
+} buffer_t;
 
-void buffer_append(buffer* buf, const char* s, int len);
-void buffer_appendz(buffer* buf, const char* s);
-void buffer_free(buffer* buf);
-void buffer_write(buffer* buf);
-void buffer_clear(buffer* buf);
+void buffer_append(buffer_t* buf, const char* s, int len);
+void buffer_appendz(buffer_t* buf, const char* s);
+void buffer_free(buffer_t* buf);
+void buffer_write(buffer_t* buf);
+void buffer_clear(buffer_t* buf);
 
 void die(const char* msg);
 
 void clear_screen_now();
 
-void clear_screen(buffer* buf);
-void reposition_cursor(buffer* buf);
-void hide_cursor(buffer* buf);
-void show_cursor(buffer* buf);
+void clear_screen(buffer_t* buf);
+void reposition_cursor(buffer_t* buf);
+void hide_cursor(buffer_t* buf);
+void show_cursor(buffer_t* buf);
 void enable_raw_mode();
 void disable_raw_mode();
 

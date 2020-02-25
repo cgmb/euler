@@ -31,19 +31,19 @@ void clear_screen_now() {
   write_stdinz(T_CLEAR T_REPOSITION_CURSOR);
 }
 
-void clear_screen(buffer* buf) {
+void clear_screen(buffer_t* buf) {
   buffer_appendz(buf, T_CLEAR T_REPOSITION_CURSOR);
 }
 
-void reposition_cursor(buffer* buf) {
+void reposition_cursor(buffer_t* buf) {
   buffer_appendz(buf, T_REPOSITION_CURSOR);
 }
 
-void hide_cursor(buffer* buf) {
+void hide_cursor(buffer_t* buf) {
   buffer_appendz(buf, T_HIDE_CURSOR);
 }
 
-void show_cursor(buffer* buf) {
+void show_cursor(buffer_t* buf) {
   buffer_appendz(buf, T_SHOW_CURSOR);
 }
 
@@ -85,7 +85,7 @@ void enable_raw_mode() {
   }
 }
 
-void buffer_append(buffer* buf, const char* s, int len) {
+void buffer_append(buffer_t* buf, const char* s, int len) {
   char* data = (char*)realloc(buf->data, buf->len + len);
   if (!data) {
     die("failed to reallocate buffer");
@@ -95,19 +95,19 @@ void buffer_append(buffer* buf, const char* s, int len) {
   buf->len += len;
 }
 
-void buffer_appendz(buffer* buf, const char* s) {
+void buffer_appendz(buffer_t* buf, const char* s) {
   buffer_append(buf, s, strlen(s));
 }
 
-void buffer_write(buffer* buf) {
+void buffer_write(buffer_t* buf) {
   write_stdin(buf->data, buf->len);
 }
 
-void buffer_clear(buffer* buf) {
+void buffer_clear(buffer_t* buf) {
   buf->len = 0;
 }
 
-void buffer_free(buffer* buf) {
+void buffer_free(buffer_t* buf) {
   free(buf->data);
 }
 
