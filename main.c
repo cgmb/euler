@@ -11,6 +11,7 @@
 #include <time.h>
 
 #include "math/vec2f.h"
+#include "math/vec2i.h"
 #include "misc/cmp.h"
 #include "misc/debug.h"
 #include "misc/terminal.h"
@@ -26,6 +27,27 @@ enum {
 // display size
 int g_wx;
 int g_wy;
+
+enum {
+  // P-cells are the outermost cell type, though the boundary
+  //   cells are always fluid sinks.
+  P_X = X,
+  P_Y = Y,
+  // U-cell samples lie between horizontal pairs of P-cells,
+  //   so there's one fewer U-cell sample in X direction.
+  U_X = X-1,
+  U_Y = Y,
+  // V-cell samples lie between vertical pairs of P-cells,
+  //   so there's one fewer V-cell sample in the Y direction.
+  V_X = X,
+  V_Y = Y-1
+};
+
+typedef enum celltype_t {
+  P,
+  U,
+  V
+} celltype_t;
 
 typedef struct args_t {
   const char* scenario_file;
@@ -105,6 +127,9 @@ bool g_source_exhausted;
 vec2f g_markers[MAX_MARKER_COUNT];
 uint8_t g_marker_count[Y][X];
 uint8_t g_old_marker_count[Y][X];
+// alternate names
+#define g_valid      g_marker_count
+#define g_prev_valid g_old_marker_count
 
 float clampf(float min, float x, float max) {
   if (x < min) {
@@ -141,82 +166,71 @@ bool is_water(size_t y, size_t x) {
   return g_marker_count[y][x] > 0;
 }
 
-void extrapolate_u(float u[Y][X]) {
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X-1; ++x) {
-      bool was_invalid = !was_water(y,x) && !was_water(y,x+1);
-      if (was_invalid && (is_water(y,x) || is_water(y,x+1))) {
-        size_t y_lower = y>0 ? y-1 : 0;
-        size_t x_lower = x>0 ? x-1 : 0;
-        size_t y_upper = y+1<Y ? y+1 : y;
-        size_t x_upper = x+2<X ? x+1 : x;
-        float total = 0.f;
-        size_t count = 0;
-        for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
-          for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
-            if (was_water(y_u,x_u) || was_water(y_u,x_u+1)) {
-              total += u[y_u][x_u];
-              count++;
-            }
-          }
-        }
-        assert(count > 0);
-        u[y][x] = total / count;
+bool p_valid(uint8_t p_validity[Y][X], vec2i pidx) {
+  assert(pidx.x < X);
+  assert(pidx.y < Y);
+  return p_validity[pidx.y][pidx.x] != 0;
+}
+
+bool u_valid(uint8_t p_validity[Y][X], vec2i uidx) {
+  vec2i left  = { uidx.x,     uidx.y };
+  vec2i right = { uidx.x + 1, uidx.y };
+  return p_valid(p_validity, left) | p_valid(p_validity, right);
+}
+
+bool v_valid(uint8_t p_validity[Y][X], vec2i vidx) {
+  vec2i bottom = { vidx.x, vidx.y     };
+  vec2i top    = { vidx.x, vidx.y + 1 };
+  return p_valid(p_validity, bottom) | p_valid(p_validity, top);
+}
+
+bool valid(uint8_t p_validity[Y][X], vec2i idx, celltype_t type) {
+  switch (type) {
+    default: assert(false);
+    case P: return p_valid(p_validity, idx);
+    case U: return u_valid(p_validity, idx);
+    case V: return v_valid(p_validity, idx);
+  }
+}
+
+float valid_neighbor_average(float q[Y][X], vec2i lower, vec2i upper, celltype_t type) {
+  float total = 0.f;
+  int count = 0;
+  for (int y = lower.y; y <= upper.y; ++y) {
+    for (int x = lower.x; x <= upper.x; ++x) {
+      if (valid(g_prev_valid, v2i(x,y), type)) {
+        total += q[y][x];
+        count++;
       }
     }
   }
+  assert(count > 0);
+  return total / count;
+}
+
+void extrapolate(float q[Y][X], vec2i max, celltype_t type) {
+  for (int y = 0; y < max.y; ++y) {
+    for (int x = 0; x < max.x; ++x) {
+      vec2i i = { x, y };
+      if (!valid(g_prev_valid, i, type) && valid(g_valid, i, type)) {
+        vec2i lower = v2i(max_i(x-1, 0),     max_i(y-1, 0));
+        vec2i upper = v2i(min_i(x+1, max.x), min_i(y+1, max.y));
+        q[y][x] = valid_neighbor_average(q, lower, upper, type);
+      }
+    }
+  }
+}
+
+void extrapolate_u(float u[Y][X]) {
+  extrapolate(u, v2i(U_X,U_Y), U);
 }
 
 void extrapolate_v(float v[Y][X]) {
-  for (size_t y = 0; y < Y-1; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      bool was_invalid = !was_water(y,x) && !was_water(y+1,x);
-      if (was_invalid && (is_water(y,x) || is_water(y+1,x))) {
-        size_t y_lower = y>0 ? y-1 : 0;
-        size_t x_lower = x>0 ? x-1 : 0;
-        size_t y_upper = y+2<Y ? y+1 : y;
-        size_t x_upper = x+1<X ? x+1 : x;
-        float total = 0.f;
-        size_t count = 0;
-        for (size_t y_v = y_lower; y_v <= y_upper; ++y_v) {
-          for (size_t x_v = x_lower; x_v <= x_upper; ++x_v) {
-            if (was_water(y_v,x_v) || was_water(y_v+1,x_v)) {
-              total += v[y_v][x_v];
-              count++;
-            }
-          }
-        }
-        assert(count > 0);
-        v[y][x] = total / count;
-      }
-    }
-  }
+  extrapolate(v, v2i(V_X,V_Y), V);
 }
 
 void extrapolate_p(float q[Y][X]) {
-  // extrapolate a quantity sampled in the pressure cell
-  for (size_t y = 0; y < Y; ++y) {
-    for (size_t x = 0; x < X; ++x) {
-      if (!was_water(y,x) && is_water(y,x)) {
-        size_t y_lower = y>0 ? y-1 : 0;
-        size_t x_lower = x>0 ? x-1 : 0;
-        size_t y_upper = y<Y-1 ? y+1 : y;
-        size_t x_upper = x<X-1 ? x+1 : x;
-        float total = 0.f;
-        size_t count = 0;
-        for (size_t y_u = y_lower; y_u <= y_upper; ++y_u) {
-          for (size_t x_u = x_lower; x_u <= x_upper; ++x_u) {
-            if (was_water(y_u,x_u)) {
-              total += q[y_u][x_u];
-              count++;
-            }
-          }
-        }
-        assert(count > 0);
-        q[y][x] = total / count;
-      }
-    }
-  }
+  extrapolate(q, v2i(P_X,P_Y), P);
 }
 
 void colorize() {
