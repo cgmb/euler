@@ -8,16 +8,16 @@
 #include <errno.h>
 #include <unistd.h>
 #include <math.h>
-#include <time.h>
 
 #include "math/vec2f.h"
 #include "math/vec2i.h"
 #include "misc/color.h"
-#include "misc/util.h"
 #include "misc/debug.h"
-#include "misc/terminal.h"
 #include "misc/file.h"
 #include "misc/rng.h"
+#include "misc/terminal.h"
+#include "misc/time.h"
+#include "misc/util.h"
 
 // simulation size
 enum {
@@ -1087,36 +1087,6 @@ void handle_window_size_changed(int signal) {
   clear_screen_now();
 }
 
-struct timespec subtract(struct timespec lhs, struct timespec rhs) {
-  struct timespec diff;
-  diff.tv_sec = lhs.tv_sec - rhs.tv_sec;
-  diff.tv_nsec = lhs.tv_nsec - rhs.tv_nsec;
-  if (lhs.tv_nsec < rhs.tv_nsec) {
-    diff.tv_sec -= 1;
-    diff.tv_nsec += 1e9;
-  }
-  return diff;
-}
-
-// wait for up to one second from the given start time
-// returns the current time when it exits
-struct timespec wait_until_nsec_from(long desired_interval_nsec,
-                                     struct timespec start) {
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-
-  struct timespec diff = subtract(now, start);
-  if (diff.tv_sec == 0) {
-    long wait_for = (desired_interval_nsec - diff.tv_nsec) / 1000;
-    if (wait_for > 0) {
-      usleep(wait_for);
-      clock_gettime(CLOCK_MONOTONIC, &now);
-    }
-  }
-
-  return now;
-}
-
 int main(int argc, char** argv) {
   enable_fpmath_asserts();
 
@@ -1133,11 +1103,11 @@ int main(int argc, char** argv) {
   buffer_t buf = { 0, 0 };
   draw(&buf);
 
-  struct timespec interval_start;
-  clock_gettime(CLOCK_MONOTONIC, &interval_start);
+  struct timespec start_time;
+  get_current_time(&start_time);
   while (process_keypress()) {
     sim_step();
-    interval_start = wait_until_nsec_from(1e8, interval_start);
+    start_time = wait_until(start_time, 1e8);
     draw(&buf);
   }
 

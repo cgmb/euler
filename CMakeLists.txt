@@ -31,6 +31,7 @@ add_executable(euler
   misc/file.c
   misc/rng.c
   misc/debug.c
+  misc/time.c
 )
 target_include_directories(euler PRIVATE .)
 target_link_libraries(euler m)
