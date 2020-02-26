@@ -1,5 +1,7 @@
 #pragma once
 
+#include <math.h>
+
 typedef struct vec2f {
   float x;
   float y;
@@ -25,4 +27,11 @@ static inline vec2f v2f_sub(vec2f a, vec2f b) {
 
 static inline vec2f v2f(float x, float y) {
   return (vec2f){x, y};
+}
+
+static inline vec2f modf2f(vec2f arg, vec2f* iptr) {
+  vec2f result;
+  result.x = modff(arg.x, &iptr->x);
+  result.y = modff(arg.y, &iptr->y);
+  return result;
 }

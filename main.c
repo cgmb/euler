@@ -298,122 +298,87 @@ void update_fluid_sources() {
   }
 }
 
-float bilinear(bool w[2][2], float q[Y][X],
-    float x_frac, int x_floori, int x_ceili,
-    float y_frac, int y_floori, int y_ceili) {
-  // uses bilinear interpolation to combine up to four samples from q
-  // at least one sample must be valid, as specified by w
-  assert(w[0][0] || w[0][1] || w[1][0] || w[1][1]);
-
-  // note that y1_mid or y2_mid may be wrong if both the points they're comprised of
-  // are out of water, but the x interpolation will take care of that.
-  float y1_frac;
-  if (!w[0][0]) {
-    y1_frac = 1.f;
-  } else if (!w[1][0]) {
-    y1_frac = 0.f;
+// result unspecified if both start and end are invalid
+float get_fraction(float fraction, bool start_valid, bool end_valid) {
+  if (!start_valid) {
+    return 1.f;
+  } else if (!end_valid) {
+    return 0.f;
   } else {
-    y1_frac = y_frac;
+    return fraction;
   }
-  float y1_mid = (1-y1_frac)*q[y_floori][x_floori] + y1_frac*q[y_ceili][x_floori];
-
-  float y2_frac;
-  if (!w[0][1]) {
-    y2_frac = 1.f;
-  } else if (!w[1][1]) {
-    y2_frac = 0.f;
-  } else {
-    y2_frac = y_frac;
-  }
-  float y2_mid = (1-y2_frac)*q[y_floori][x_ceili] + y2_frac*q[y_ceili][x_ceili];
-
-  float x0_frac;
-  if (!w[0][0] && !w[1][0]) {
-    x0_frac = 1.f;
-  } else if (!w[0][1] && !w[1][1]) {
-    x0_frac = 0.f;
-  } else {
-    x0_frac = x_frac;
-  }
-  return (1-x0_frac)*y1_mid + x0_frac*y2_mid;
 }
 
+float linear(float x0, float x1, float frac) {
+  return (1.f - frac)*x0 + frac*x1;
+}
+
+// This method of handling missing data in interpolation gives different
+// results depending on whether you interpolated horizontally first or
+// vertically first, which is not a good sign for correctness.
+float bilinear(float q[2][2], vec2f frac, bool valid[2][2]) {
+  assert(valid[0][0] | valid[0][1] | valid[1][0] | valid[1][1]);
+  // one fraction may be wrong if all values on one side are invalid,
+  // but the resulting value will be ignored in the vertical interpolation
+  float left_frac = get_fraction(frac.y, valid[0][0], valid[1][0]);
+  float right_frac = get_fraction(frac.y, valid[0][1], valid[1][1]);
+
+  float left_value = linear(q[0][0], q[1][0], left_frac);
+  float right_value = linear(q[0][1], q[1][1], right_frac);
+
+  float horz_frac = get_fraction(frac.x, valid[0][0] | valid[1][0],
+                                         valid[0][1] | valid[1][1]);
+  return linear(left_value, right_value, horz_frac);
+}
+
+vec2i to_vec2i(vec2f v) {
+  return (vec2i){ (int)v.x, (int)v.y };
+}
+
+float arr_get(float q[Y][X], vec2i idx, bool valid) {
+  return valid ? q[idx.y][idx.x] : 0.f;
+}
+
+float interpolate(float q[Y][X], vec2f idx, celltype_t type) {
+  vec2i size = grid_size(type);
+  idx.x = clampf(0, idx.x, nextafterf(size.x-1, 0));
+  idx.y = clampf(0, idx.y, nextafterf(size.y-1, 0));
+
+  vec2f whole;
+  vec2f frac = modf2f(idx, &whole);
+  vec2i base_idx = to_vec2i(whole);
+
+  // using bilinear interpolation between the 4 surrounding points,
+  // excluding any points outside the fluid
+  bool valid[2][2] = {
+    { property(g_fluid, base_idx, type),
+      property(g_fluid, right(base_idx), type) },
+    { property(g_fluid, up(base_idx), type),
+      property(g_fluid, up(right(base_idx)), type) }
+  };
+  // todo: only use bilinear interpolation when all 4 points are valid
+  //       use barycentric coordinates when only 3 points are valid
+  //       use linear interpolation when only 2 points are valid
+  float qlocal[2][2] = {
+    { arr_get(q, base_idx, valid[0][0]),
+      arr_get(q, right(base_idx), valid[0][1]) },
+    { arr_get(q, up(base_idx), valid[1][0]),
+      arr_get(q, up(right(base_idx)), valid[1][1]) }
+  };
+  return bilinear(qlocal, frac, valid);
+}
+
+
 float interpolate_u(float u[Y][X], vec2f uidx) {
-  // bilinear interpolation
-  float x = clampf(0, uidx.x, X-2);
-  float y = clampf(0, uidx.y, Y-1);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floori = (int)x_floor;
-  int x_ceili = min_i(x_floori+1, X-2);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floori = (int)y_floor;
-  int y_ceili = min_i(y_floori+1, Y-1);
-
-  // bilinearly interpolate between the 4 surrounding points, excluding
-  // any points that do not have water
-  bool w[2][2];
-  w[0][0] = is_fluid(y_floori,x_floori) || is_fluid(y_floori,x_floori+1);
-  w[0][1] = is_fluid(y_floori,x_ceili) || is_fluid(y_floori,x_ceili+1);
-  w[1][0] = is_fluid(y_ceili,x_floori) || is_fluid(y_ceili,x_floori+1);
-  w[1][1] = is_fluid(y_ceili,x_ceili) || is_fluid(y_ceili,x_ceili+1);
-
-  return bilinear(w, u, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
+  return interpolate(u, uidx, U);
 }
 
 float interpolate_v(float v[Y][X], vec2f vidx) {
-  // bilinear interpolation
-  float x = clampf(0, vidx.x, X-1);
-  float y = clampf(0, vidx.y, Y-2);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floori = (int)x_floor;
-  int x_ceili = min_i(x_floori+1, X-1);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floori = (int)y_floor;
-  int y_ceili = min_i(y_floori+1, Y-2);
-
-  // bilinearly interpolate between the 4 surrounding points, excluding
-  // any points that do not have water
-  bool w[2][2];
-  w[0][0] = is_fluid(y_floori,x_floori) || is_fluid(y_floori+1,x_floori);
-  w[0][1] = is_fluid(y_floori,x_ceili) || is_fluid(y_floori+1,x_ceili);
-  w[1][0] = is_fluid(y_ceili,x_floori) || is_fluid(y_ceili+1,x_floori);
-  w[1][1] = is_fluid(y_ceili,x_ceili) || is_fluid(y_ceili+1,x_ceili);
-
-  return bilinear(w, v, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
+  return interpolate(v, vidx, V);
 }
 
 float interpolate_p(float q[Y][X], vec2f pidx) {
-  // bilinear interpolation
-  float x = clampf(0, pidx.x, X-1);
-  float y = clampf(0, pidx.y, Y-1);
-
-  float x_floor;
-  float x_frac = modff(x, &x_floor);
-  int x_floori = (int)x_floor;
-  int x_ceili = min_i(x_floori+1, X-1);
-
-  float y_floor;
-  float y_frac = modff(y, &y_floor);
-  int y_floori = (int)y_floor;
-  int y_ceili = min_i(y_floori+1, Y-1);
-
-  // bilinearly interpolate between the 4 surrounding points, excluding
-  // any points that do not have water
-  bool w[2][2];
-  w[0][0] = is_fluid(y_floori,x_floori);
-  w[0][1] = is_fluid(y_floori,x_ceili);
-  w[1][0] = is_fluid(y_ceili,x_floori);
-  w[1][1] = is_fluid(y_ceili,x_ceili);
-
-  return bilinear(w, q, x_frac, x_floori, x_ceili, y_frac, y_floori, y_ceili);
+  return interpolate(q, pidx, P);
 }
 
 vec2f uidx_to_vidx(vec2i uidx) {
