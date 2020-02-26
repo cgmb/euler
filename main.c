@@ -94,13 +94,13 @@ size_t g_markers_length;
 bool g_source_exhausted;
 vec2f g_markers[MAX_MARKER_COUNT];
 uint8_t g_marker_count[Y][X];
-uint8_t g_old_marker_count[Y][X];
+uint8_t g_prev_marker_count[Y][X];
 // alternate names
-#define g_valid      g_marker_count
-#define g_prev_valid g_old_marker_count
+#define g_fluid      g_marker_count
+#define g_prev_fluid g_prev_marker_count
 
 void refresh_marker_counts() {
-  memcpy(g_old_marker_count, g_marker_count, sizeof(g_marker_count));
+  memcpy(g_prev_marker_count, g_marker_count, sizeof(g_marker_count));
   memset(g_marker_count, 0, sizeof(g_marker_count));
   for (size_t i = 0; i < g_markers_length; ++i) {
     int x = (int)floorf(g_markers[i].x / k_s);
@@ -116,34 +116,33 @@ void refresh_marker_counts() {
   }
 }
 
-bool p_valid(uint8_t p_validity[Y][X], vec2i pidx) {
-  assert(pidx.x < X);
-  assert(pidx.y < Y);
-  return p_validity[pidx.y][pidx.x] != 0;
+bool p_property(uint8_t p_value[Y][X], vec2i pidx) {
+  assert(pidx.x >= 0 && pidx.x < X && pidx.y >= 0 && pidx.y < Y);
+  return p_value[pidx.y][pidx.x] != 0;
 }
 
 bool is_fluid(int y, int x) {
-  return p_valid(g_valid, v2i(x,y));
+  return p_property(g_fluid, v2i(x,y));
 }
 
-bool u_valid(uint8_t p_validity[Y][X], vec2i uidx) {
+bool u_property(uint8_t p_value[Y][X], vec2i uidx) {
   vec2i left  = { uidx.x,     uidx.y };
   vec2i right = { uidx.x + 1, uidx.y };
-  return p_valid(p_validity, left) | p_valid(p_validity, right);
+  return p_property(p_value, left) | p_property(p_value, right);
 }
 
-bool v_valid(uint8_t p_validity[Y][X], vec2i vidx) {
+bool v_property(uint8_t p_value[Y][X], vec2i vidx) {
   vec2i bottom = { vidx.x, vidx.y     };
   vec2i top    = { vidx.x, vidx.y + 1 };
-  return p_valid(p_validity, bottom) | p_valid(p_validity, top);
+  return p_property(p_value, bottom) | p_property(p_value, top);
 }
 
-bool valid(uint8_t p_validity[Y][X], vec2i idx, celltype_t type) {
+bool property(uint8_t p_value[Y][X], vec2i idx, celltype_t type) {
   switch (type) {
     default: assert(false);
-    case P: return p_valid(p_validity, idx);
-    case U: return u_valid(p_validity, idx);
-    case V: return v_valid(p_validity, idx);
+    case P: return p_property(p_value, idx);
+    case U: return u_property(p_value, idx);
+    case V: return v_property(p_value, idx);
   }
 }
 
@@ -161,7 +160,7 @@ float valid_neighbor_average(float q[Y][X], vec2i lower, vec2i upper, celltype_t
   int count = 0;
   for (int y = lower.y; y <= upper.y; ++y) {
     for (int x = lower.x; x <= upper.x; ++x) {
-      if (valid(g_prev_valid, v2i(x,y), type)) {
+      if (property(g_prev_fluid, v2i(x,y), type)) {
         total += q[y][x];
         count++;
       }
@@ -176,7 +175,7 @@ void extrapolate(float q[Y][X], celltype_t type) {
   for (int y = 0; y < size.y; ++y) {
     for (int x = 0; x < size.x; ++x) {
       vec2i i = { x, y };
-      if (!valid(g_prev_valid, i, type) && valid(g_valid, i, type)) {
+      if (!property(g_prev_fluid, i, type) && property(g_fluid, i, type)) {
         vec2i lower = v2i(max_i(x-1, 0),     max_i(y-1, 0));
         vec2i upper = v2i(min_i(x+1, size.x-1), min_i(y+1, size.y-1));
         q[y][x] = valid_neighbor_average(q, lower, upper, type);
@@ -188,7 +187,7 @@ void extrapolate(float q[Y][X], celltype_t type) {
 void colorize() {
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
-      if (p_valid(g_valid, v2i(x,y))) {
+      if (p_property(g_fluid, v2i(x,y))) {
         float t = 0.f;
         if (!g_source[y][x]) {
           t = (x + y) * 6.f / k_initial_color_period;
@@ -424,7 +423,7 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (int y = 0; y < U_Y; ++y) {
     for (int x = 0; x < U_X; ++x) {
       vec2i uidx = { x, y };
-      if (u_valid(g_valid, uidx)) {
+      if (u_property(g_fluid, uidx)) {
         // find the velocity at the sample point
         float dx = u[y][x];
         float dy = interpolate_v(v, uidx_to_vidx(uidx));
@@ -447,7 +446,7 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   for (int y = 0; y < V_Y; ++y) {
     for (int x = 0; x < V_X; ++x) {
       vec2i vidx = { x, y };
-      if (v_valid(g_valid, vidx)) {
+      if (v_property(g_fluid, vidx)) {
         // find the velocity at the sample point
         float dy = v[y][x];
         float dx = interpolate_u(u, vidx_to_uidx(vidx));
@@ -466,7 +465,7 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
   for (int y = 0; y < P_Y; ++y) {
     for (int x = 0; x < P_X; ++x) {
       vec2i pidx = { x, y };
-      if (p_valid(g_valid, pidx)) {
+      if (p_property(g_fluid, pidx)) {
         // the caller must ensure there is never fluid in a boundary cell
         float dy = (v[y][x] + v[y-1][x]) / 2;
         float dx = (u[y][x] + u[y][x-1]) / 2;
@@ -857,7 +856,7 @@ void zero_bounds_u(float u[Y][X]) {
   for (int y = 0; y < U_Y; ++y) {
     for (int x = 0; x < U_X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      bool is_air = !u_valid(g_valid, v2i(x,y));
+      bool is_air = !u_property(g_fluid, v2i(x,y));
       if (is_air || g_solid[y][x] || g_solid[y][x+1]) {
         u[y][x] = 0.f;
       }
@@ -869,7 +868,7 @@ void zero_bounds_v(float v[Y][X]) {
   for (int y = 0; y < V_Y; ++y) {
     for (int x = 0; x < V_X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      bool is_air = !v_valid(g_valid, v2i(x,y));
+      bool is_air = !v_property(g_fluid, v2i(x,y));
       if (is_air || g_solid[y][x] || g_solid[y+1][x]) {
         v[y][x] = 0.f;
       }
