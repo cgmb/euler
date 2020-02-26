@@ -853,23 +853,13 @@ float maxsq(float q[Y][X], celltype_t type) {
   return max;
 }
 
-void zero_bounds_u(float u[Y][X]) {
-  for (int y = 0; y < U_Y; ++y) {
-    for (int x = 0; x < U_X; ++x) {
+void zero_bounds(float q[Y][X], celltype_t type) {
+  vec2i size = grid_size(type);
+  for (int y = 0; y < size.y; ++y) {
+    for (int x = 0; x < size.x; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      if (!u_property(g_fluid, v2i(x,y)) || u_property(g_solid, v2i(x,y))) {
-        u[y][x] = 0.f;
-      }
-    }
-  }
-}
-
-void zero_bounds_v(float v[Y][X]) {
-  for (int y = 0; y < V_Y; ++y) {
-    for (int x = 0; x < V_X; ++x) {
-      // not really necessary to zero air cells, but makes debugging easier
-      if (!v_property(g_fluid, v2i(x,y)) || v_property(g_solid, v2i(x,y))) {
-        v[y][x] = 0.f;
+      if (!property(g_fluid, v2i(x,y), type) || property(g_solid, v2i(x,y), type)) {
+        q[y][x] = 0.f;
       }
     }
   }
@@ -918,8 +908,8 @@ void sim_step() {
     update_fluid_sources();
     extrapolate(g_u, U);
     extrapolate(g_v, V);
-    zero_bounds_u(g_u);
-    zero_bounds_v(g_v);
+    zero_bounds(g_u, U);
+    zero_bounds(g_v, V);
 
     // advect fluid properties along the fluid flow
     advect_u(g_u, g_v, dt, g_utmp);
@@ -939,8 +929,8 @@ void sim_step() {
     apply_body_forces(g_vtmp, dt);
 
     // set velocities constrained by solid boundaries
-    zero_bounds_u(g_utmp);
-    zero_bounds_v(g_vtmp);
+    zero_bounds(g_utmp, U);
+    zero_bounds(g_vtmp, V);
 
     // project our approximate solution for the updated velocity field
     // to the nearest divergence-free solution
