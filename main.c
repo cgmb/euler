@@ -987,8 +987,7 @@ void draw_rows(buffer_t* buf) {
         prev_water = has_water;
       }
     }
-    buffer_appendz(buf, T_RESET);
-    buffer_appendz(buf, "\x1b[K"); // clear remainder of line
+    buffer_appendz(buf, T_RESET T_CLEAR_LINE);
     if (y > y_cutoff) {
       buffer_appendz(buf, "\r\n");
     }

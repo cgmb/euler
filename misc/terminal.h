@@ -47,3 +47,10 @@ int set_window_size_handler(wshandler_t fn);
 #define T_BG_WHITE   "\x1B[47m"
 
 #define T_RESET   "\x1B[0m"
+
+// Terminal Control Codes
+#define T_CLEAR             "\x1b[2J"
+#define T_REPOSITION_CURSOR "\x1b[H"
+#define T_SHOW_CURSOR       "\x1b[?25h"
+#define T_HIDE_CURSOR       "\x1b[?25l"
+#define T_CLEAR_LINE        "\x1b[K"

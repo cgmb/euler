@@ -10,12 +10,6 @@
 
 // http://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 
-// Terminal Control Codes
-#define T_CLEAR             "\x1b[2J"
-#define T_REPOSITION_CURSOR "\x1b[H"
-#define T_SHOW_CURSOR       "\x1b[?25h"
-#define T_HIDE_CURSOR       "\x1b[?25l"
-
 static struct termios g_orig_termios;
 
 static void write_stdin(const char* buf, ssize_t count) {
