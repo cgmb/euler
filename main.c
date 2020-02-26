@@ -9,8 +9,7 @@
 #include <unistd.h>
 #include <math.h>
 
-#include "math/vec2f.h"
-#include "math/vec2i.h"
+#include "misc/vec2.h"
 #include "misc/color.h"
 #include "misc/debug.h"
 #include "misc/file.h"
@@ -329,10 +328,6 @@ float bilinear(float q[2][2], vec2f frac, bool valid[2][2]) {
   float horz_frac = get_fraction(frac.x, valid[0][0] | valid[1][0],
                                          valid[0][1] | valid[1][1]);
   return linear(left_value, right_value, horz_frac);
-}
-
-vec2i to_vec2i(vec2f v) {
-  return (vec2i){ (int)v.x, (int)v.y };
 }
 
 float arr_get(float q[Y][X], vec2i idx, bool valid) {
