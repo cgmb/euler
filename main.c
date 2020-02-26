@@ -68,9 +68,10 @@ float g_utmp[Y][X]; // [Y][X-1]
 float g_vtmp[Y][X]; // [Y-1][X]
 
 // grid cell properties from the scenario file
-bool g_solid[Y][X];
-bool g_source[Y][X];
-bool g_sink[Y][X];
+// uint8_t used as a compact bool
+uint8_t g_solid[Y][X];
+uint8_t g_source[Y][X];
+uint8_t g_sink[Y][X];
 
 // color data
 bool g_rainbow_enabled;
@@ -216,7 +217,7 @@ void sim_init(args_t in) {
 
   // parse the scenario file to init our fluid
   int i = 0;
-  bool fluid[Y][X] = {};
+  uint8_t fluid[Y][X] = {};
   for (int y = Y-2; y > 0 && i < length; --y) {
     int x;
     for (x = 1; x < X-1 && i < length; ++x) {
@@ -814,11 +815,11 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // update horizontal velocities
   for (int y = 0; y < U_Y; ++y) {
     for (int x = 0; x < U_X; ++x) {
-      if (g_solid[y][x] || g_solid[y][x+1]) {
+      if (u_property(g_solid, v2i(x,y))) {
         uout[y][x] = 0.f;
-      } else if (is_fluid(y,x) || is_fluid(y,x+1)) {
+      } else if (u_property(g_fluid, v2i(x,y))) {
         uout[y][x] = u[y][x] - invf(k_d*k_s) * dt * (p[y][x+1] - p[y][x]);
-      } else { // both cells are air
+      } else { // air
         uout[y][x] = 0.f;
       }
     }
@@ -827,11 +828,11 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // update vertical velocities
   for (int y = 0; y < V_Y; ++y) {
     for (int x = 0; x < V_X; ++x) {
-      if (g_solid[y][x] || g_solid[y+1][x]) {
+      if (v_property(g_solid, v2i(x,y))) {
         vout[y][x] = 0.f;
-      } else if (is_fluid(y,x) || is_fluid(y+1,x)) {
+      } else if (v_property(g_fluid, v2i(x,y))) {
         vout[y][x] = v[y][x] - invf(k_d*k_s) * dt * (p[y+1][x] - p[y][x]);
-      } else { // both cells are air
+      } else { // air
         vout[y][x] = 0.f;
       }
     }
@@ -856,8 +857,7 @@ void zero_bounds_u(float u[Y][X]) {
   for (int y = 0; y < U_Y; ++y) {
     for (int x = 0; x < U_X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      bool is_air = !u_property(g_fluid, v2i(x,y));
-      if (is_air || g_solid[y][x] || g_solid[y][x+1]) {
+      if (!u_property(g_fluid, v2i(x,y)) || u_property(g_solid, v2i(x,y))) {
         u[y][x] = 0.f;
       }
     }
@@ -868,8 +868,7 @@ void zero_bounds_v(float v[Y][X]) {
   for (int y = 0; y < V_Y; ++y) {
     for (int x = 0; x < V_X; ++x) {
       // not really necessary to zero air cells, but makes debugging easier
-      bool is_air = !v_property(g_fluid, v2i(x,y));
-      if (is_air || g_solid[y][x] || g_solid[y+1][x]) {
+      if (!v_property(g_fluid, v2i(x,y)) || v_property(g_solid, v2i(x,y))) {
         v[y][x] = 0.f;
       }
     }
