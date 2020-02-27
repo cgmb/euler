@@ -55,9 +55,9 @@ typedef struct args_t {
 } args_t;
 
 // simulation constants
-const float k_s = 1.f; // side length
-const float k_d = 1.f; // density
-const float k_g = -10.f; // gravity
+const float k_side_length = 1.f; // grid cell size (m)
+const float k_density = 1.f;     // density in 2D (kg/m²)
+const float k_gravity = -10.f;   // acceleration (m/s²)
 
 // All arrays are the same size so functions like bilinear interpolation can
 // work on any array. The real size is smaller and is listed in the comments.
@@ -85,7 +85,7 @@ const float k_initial_color_period = 60.f; // grid cells
 
 // simulation progress
 bool g_pause;
-uint32_t g_simulate_steps;
+uint32_t g_temp_unpause_counter;
 uint16_t g_frame_count;
 
 // marker particle data
@@ -103,8 +103,8 @@ void refresh_marker_counts() {
   memcpy(g_prev_marker_count, g_marker_count, sizeof(g_marker_count));
   memset(g_marker_count, 0, sizeof(g_marker_count));
   for (size_t i = 0; i < g_markers_length; ++i) {
-    int x = (int)floorf(g_markers[i].x / k_s);
-    int y = (int)floorf(g_markers[i].y / k_s);
+    int x = (int)floorf(g_markers[i].x / k_side_length);
+    int y = (int)floorf(g_markers[i].y / k_side_length);
     assert(x > 0 && x < (int)X && y > 0 && y < (int)Y);
     if (g_sink[y][x] || g_solid[y][x]) {
       // todo: stop moving markers into solid objects
@@ -259,7 +259,7 @@ void sim_init(args_t in) {
         for (int k = 0; k < 4; ++k) {
           float x = i + (k < 2 ? 0 : 0.5f) + (randf()/2);
           float y = j + (k % 2 ? 0 : 0.5f) + (randf()/2);
-          g_markers[idx++] = v2f_mulf(k_s, v2f(x,y));
+          g_markers[idx++] = v2f_mulf(k_side_length, v2f(x,y));
         }
       }
     }
@@ -285,7 +285,7 @@ void update_fluid_sources() {
     for (int x = 0; x < X; ++x) {
       if (g_source[y][x]) {
         if (!g_source_exhausted && g_marker_count[y][x] < 4) {
-          g_markers[g_markers_length++] = v2f_mulf(k_s, v2f(x+randf(), y+randf()));
+          g_markers[g_markers_length++] = v2f_mulf(k_side_length, v2f(x+randf(), y+randf()));
           g_marker_count[y][x]++;
           g_source_exhausted |= (g_markers_length == MAX_MARKER_COUNT-1);
         }
@@ -390,8 +390,8 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
         float dy = interpolate_v(v, uidx_to_vidx(uidx));
         // extrapolate backwards through time to find
         // where the fluid came from
-        vec2f prev = { x - dx*dt / k_s,
-                       y - dy*dt / k_s };
+        vec2f prev = { x - dx*dt / k_side_length,
+                       y - dy*dt / k_side_length };
         // take the value from there and put it here
         out[y][x] = interpolate_u(u, prev);
       }
@@ -413,8 +413,8 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
         float dx = interpolate_u(u, vidx_to_uidx(vidx));
         // extrapolate backwards through time to find
         // where the fluid came from
-        vec2f prev = { x - dx*dt / k_s,
-                       y - dy*dt / k_s };
+        vec2f prev = { x - dx*dt / k_side_length,
+                       y - dy*dt / k_side_length };
         // take the value from there and put it here
         out[y][x] = interpolate_v(v, prev);
       }
@@ -430,8 +430,8 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
         // the caller must ensure there is never fluid in a boundary cell
         float dy = (v[y][x] + v[y-1][x]) / 2;
         float dx = (u[y][x] + u[y][x-1]) / 2;
-        vec2f prev = { x - dx*dt / k_s,
-                       y - dy*dt / k_s };
+        vec2f prev = { x - dx*dt / k_side_length,
+                       y - dy*dt / k_side_length };
         out[y][x] = interpolate_p(q, prev);
       }
     }
@@ -439,10 +439,10 @@ void advect_p(float q[Y][X], float u[Y][X], float v[Y][X], float dt, float out[Y
 }
 
 vec2f velocity_at(vec2f pos) {
-  vec2f uidx = { pos.x / k_s - 1.f,
-                 pos.y / k_s - 0.5f };
-  vec2f vidx = { pos.x / k_s - 0.5f,
-                 pos.y / k_s - 1.f };
+  vec2f uidx = { pos.x / k_side_length - 1.f,
+                 pos.y / k_side_length - 0.5f };
+  vec2f vidx = { pos.x / k_side_length - 0.5f,
+                 pos.y / k_side_length - 1.f };
   // out-of-bounds is handled in interpolate
   float x = interpolate_u(g_u, uidx);
   float y = interpolate_v(g_v, vidx);
@@ -468,13 +468,13 @@ void advect_markers(float dt) {
     vec2f v = velocity_at(p);
     vec2f np;
 
-    int x_idx = (int)floorf(p.x / k_s);
-    int y_idx = (int)floorf(p.y / k_s);
+    int x_idx = (int)floorf(p.x / k_side_length);
+    int y_idx = (int)floorf(p.y / k_side_length);
 
     // next horizontal intersect
     int x_dir = v.x > 0 ? 1 : -1;
     int nx_idx = x_idx + (v.x > 0 ? 1 : 0);
-    np.x = nx_idx*k_s;
+    np.x = nx_idx*k_side_length;
     float t_x = time_to(p.x, np.x, v.x);
     // at idx = x, we're on the boundary between x-1 and x
     // if we're going left, the pressure cell we care about is x-1
@@ -484,7 +484,7 @@ void advect_markers(float dt) {
     // next vertical intersect
     int y_dir = v.y > 0 ? 1 : -1;
     int ny_idx = y_idx + (v.y > 0 ? 1 : 0);
-    np.y = ny_idx*k_s;
+    np.y = ny_idx*k_side_length;
     float t_y = time_to(p.y, np.y, v.y);
     // at idx = y, we're on the boundary between y-1 and y
     // if we're going down, the pressure cell we care about is y-1
@@ -508,7 +508,7 @@ void advect_markers(float dt) {
           // calculate next intersection
           x_idx = nx_idx;
           nx_idx = x_idx + x_dir;
-          np.x = nx_idx*k_s;
+          np.x = nx_idx*k_side_length;
           t_x = time_to(p.x, np.x, v.x);
         }
       } else {
@@ -525,7 +525,7 @@ void advect_markers(float dt) {
           // calculate next intersection
           y_idx = ny_idx;
           ny_idx = y_idx + y_dir;
-          np.y = ny_idx*k_s;
+          np.y = ny_idx*k_side_length;
           t_y = time_to(p.y, np.y, v.y);
         }
       }
@@ -540,7 +540,7 @@ void advect_markers(float dt) {
 void apply_body_forces(float v[Y][X], float dt) {
   for (int y = 0; y < V_Y; ++y) {
     for (int x = 0; x < V_X; ++x) {
-      v[y][x] += k_g * dt;
+      v[y][x] += k_gravity * dt;
     }
   }
 }
@@ -601,7 +601,7 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   }
 
   // solve Lq = r
-  memset(g_q, '\0', sizeof(double)*Y*X);
+  memset(g_q, 0, sizeof(double)*Y*X);
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y, x)) {
@@ -614,7 +614,7 @@ void apply_preconditioner(double r[Y][X], double z[Y][X]) {
   }
 
   // solve Lᵀz = q
-  memset(z, '\0', sizeof(double)*Y*X);
+  memset(z, 0, sizeof(double)*Y*X);
   for (int y = Y; y--;) {
     for (int x = X; x--;) {
       if (is_fluid(y, x)) {
@@ -703,16 +703,18 @@ void fmadd(double a[Y][X], double b, double c[Y][X]) {
 }
 
 void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
-  const double c = -k_d*k_s*k_s / dt; // -density * dx^2 / dt
-  double d0[Y][X] = {}; // divergence * c
+  // Using -div(u) = laplacian(p) * dt / density.
+  // Solve Ap = b, with A = laplacian * dx²,
+  //                    b = -div(u) * density * dx² / dt
+  const double k_inv_scale = sqf(k_side_length) * k_density / dt;
 
-  // calculate d0
+  // calculate b
+  double b[Y][X] = {};
   for (int y = 0; y < Y; ++y) {
     for (int x = 0; x < X; ++x) {
       if (is_fluid(y,x)) {
-        float up = u[y][x-1];
-        float vp = v[y-1][x];
-        d0[y][x] = c * invf(k_s) * (u[y][x] - up + v[y][x] - vp);
+        double divergence = (u[y][x] - u[y][x-1] + v[y][x] - v[y-1][x]) / k_side_length;
+        b[y][x] = -divergence * k_inv_scale;
       }
     }
   }
@@ -732,7 +734,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
   // conjugate gradient
   double p[Y][X] = {}; // pressure guess
   double r[Y][X];      // residual
-  memcpy(r, d0, sizeof(r));
+  memcpy(r, b, sizeof(r));
   if (!all_zero(r)) {
     double z[Y][X];      // auxiliary vector
     apply_preconditioner(r, z);
@@ -778,7 +780,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (u_property(g_solid, v2i(x,y))) {
         uout[y][x] = 0.f;
       } else if (u_property(g_fluid, v2i(x,y))) {
-        uout[y][x] = u[y][x] - invf(k_d*k_s) * dt * (p[y][x+1] - p[y][x]);
+        uout[y][x] = u[y][x] - invf(k_density*k_side_length) * dt * (p[y][x+1] - p[y][x]);
       } else { // air
         uout[y][x] = 0.f;
       }
@@ -791,7 +793,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (v_property(g_solid, v2i(x,y))) {
         vout[y][x] = 0.f;
       } else if (v_property(g_fluid, v2i(x,y))) {
-        vout[y][x] = v[y][x] - invf(k_d*k_s) * dt * (p[y+1][x] - p[y][x]);
+        vout[y][x] = v[y][x] - invf(k_density*k_side_length) * dt * (p[y+1][x] - p[y][x]);
       } else { // air
         vout[y][x] = 0.f;
       }
@@ -829,25 +831,22 @@ float calculate_timestep(float frame_time) {
   // Bridson suggests a limit of five cells, but my implementation
   // of advection and extrapolation assume that new fluid cells are
   // within one grid cell of old fluid cells.
-  const float max_distance = 0.75f * k_s;
+  const float max_distance = 0.75f * k_side_length;
   float max_velocity = sqrtf(maxsq(g_u, U) + maxsq(g_v, V));
   return fminf(max_distance / max_velocity, frame_time);
 }
 
 void sim_step() {
-  if (g_pause && g_simulate_steps == 0) {
+  if (g_pause && g_temp_unpause_counter == 0) {
     return;
   }
 
+  // split frame timestep into sub-steps
   const float total_frame_time = 0.1f;
   float frame_time = total_frame_time;
-  int steps = 0;
-  do {
+  for (int step = 0; frame_time > 0.f && step < 8; ++step) {
     float dt = calculate_timestep(frame_time);
     frame_time -= dt;
-    if (steps++ > 7) {
-      break; // give up on real-time
-    }
 
     advect_markers(dt);
     refresh_marker_counts();
@@ -888,10 +887,10 @@ void sim_step() {
     // project our approximate solution for the updated velocity field
     // to the nearest divergence-free solution
     project(dt, g_utmp, g_vtmp, g_u, g_v);
-  } while (frame_time > 0.f);
+  }
 
-  if (g_simulate_steps) {
-    g_simulate_steps--;
+  if (g_temp_unpause_counter) {
+    g_temp_unpause_counter--;
   }
   g_frame_count++;
 }
@@ -964,7 +963,7 @@ bool process_keypress() {
   if (c == 'p') {
     g_pause = !g_pause;
   } else if (c == 'f') {
-    g_simulate_steps++;
+    g_temp_unpause_counter++;
   } else if (c == 'r') {
     if (g_rainbow_enabled) {
       colorize();
