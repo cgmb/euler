@@ -826,19 +826,12 @@ void zero_bounds(float q[Y][X], celltype_t type) {
 }
 
 float calculate_timestep(float frame_time) {
-  // Bridson suggests a limit of five for stability, but my implementation of
-  // advection and extrapolation assume that new fluid cells are within one
-  // grid cell of old fluid cells
-  const float m = 0.75f; // maximum number of cells to traverse in one step
-
-  float dt;
+  // Bridson suggests a limit of five cells, but my implementation
+  // of advection and extrapolation assume that new fluid cells are
+  // within one grid cell of old fluid cells.
+  const float max_distance = 0.75f * k_s;
   float max_velocity = sqrtf(maxsq(g_u, U) + maxsq(g_v, V));
-  if (max_velocity < (m*k_s / frame_time)) {
-    dt = frame_time;
-  } else {
-    dt = m*k_s / max_velocity;
-  }
-  return dt;
+  return fminf(max_distance / max_velocity, frame_time);
 }
 
 void sim_step() {
