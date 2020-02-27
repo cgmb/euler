@@ -701,6 +701,11 @@ void fmadd(double a[Y][X], double b, double c[Y][X]) {
   }
 }
 
+// Acceleration due to pressure: -grad(p) / density
+float accel(float delta_p) {
+  return -invf(k_density * k_side_length) * delta_p;
+}
+
 void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vout[Y][X]) {
   // Using -div(u) = laplacian(p) * dt / density.
   // Solve Ap = b, with A = laplacian * dx²,
@@ -779,7 +784,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (u_property(g_solid, v2i(x,y))) {
         uout[y][x] = 0.f;
       } else if (u_property(g_fluid, v2i(x,y))) {
-        uout[y][x] = u[y][x] - invf(k_density*k_side_length) * dt * (p[y][x+1] - p[y][x]);
+        uout[y][x] = u[y][x] + accel(p[y][x+1] - p[y][x]) * dt;
       } else { // air
         uout[y][x] = 0.f;
       }
@@ -792,7 +797,7 @@ void project(float dt, float u[Y][X], float v[Y][X], float uout[Y][X], float vou
       if (v_property(g_solid, v2i(x,y))) {
         vout[y][x] = 0.f;
       } else if (v_property(g_fluid, v2i(x,y))) {
-        vout[y][x] = v[y][x] - invf(k_density*k_side_length) * dt * (p[y+1][x] - p[y][x]);
+        vout[y][x] = v[y][x] + accel(p[y+1][x] - p[y][x]) * dt;
       } else { // air
         vout[y][x] = 0.f;
       }
