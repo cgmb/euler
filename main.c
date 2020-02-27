@@ -61,10 +61,10 @@ const float k_gravity = -10.f;   // acceleration (m/s²)
 
 // All arrays are the same size so functions like bilinear interpolation can
 // work on any array. The real size is smaller and is listed in the comments.
-float g_u[Y][X]; // [Y][X-1]
-float g_v[Y][X]; // [Y-1][X]
-float g_utmp[Y][X]; // [Y][X-1]
-float g_vtmp[Y][X]; // [Y-1][X]
+float g_u[Y][X]; // [Y][X-1] aka [U_Y][U_X]
+float g_v[Y][X]; // [Y-1][X] aka [V_Y][V_X]
+float g_utmp[Y][X]; // [Y][X-1] aka [U_Y][U_X]
+float g_vtmp[Y][X]; // [Y-1][X] aka [V_Y][V_X]
 
 // grid cell properties from the scenario file
 // uint8_t used as a compact bool
@@ -330,7 +330,7 @@ float bilinear(float q[2][2], vec2f frac, bool valid[2][2]) {
   return linear(left_value, right_value, horz_frac);
 }
 
-float arr_get(float q[Y][X], vec2i idx, bool valid) {
+float sparse_get(float q[Y][X], vec2i idx, bool valid) {
   return valid ? q[idx.y][idx.x] : 0.f;
 }
 
@@ -341,7 +341,7 @@ float interpolate(float q[Y][X], vec2f idx, celltype_t type) {
 
   vec2f whole;
   vec2f frac = modf2f(idx, &whole);
-  vec2i base_idx = to_vec2i(whole);
+  vec2i base_idx = v2i_trunc(whole);
 
   // using bilinear interpolation between the 4 surrounding points,
   // excluding any points outside the fluid
@@ -355,14 +355,13 @@ float interpolate(float q[Y][X], vec2f idx, celltype_t type) {
   //       use barycentric coordinates when only 3 points are valid
   //       use linear interpolation when only 2 points are valid
   float qlocal[2][2] = {
-    { arr_get(q, base_idx, valid[0][0]),
-      arr_get(q, right(base_idx), valid[0][1]) },
-    { arr_get(q, up(base_idx), valid[1][0]),
-      arr_get(q, up(right(base_idx)), valid[1][1]) }
+    { sparse_get(q, base_idx, valid[0][0]),
+      sparse_get(q, right(base_idx), valid[0][1]) },
+    { sparse_get(q, up(base_idx), valid[1][0]),
+      sparse_get(q, up(right(base_idx)), valid[1][1]) }
   };
   return bilinear(qlocal, frac, valid);
 }
-
 
 float interpolate_u(float u[Y][X], vec2f uidx) {
   return interpolate(u, uidx, U);
@@ -376,7 +375,7 @@ float interpolate_p(float q[Y][X], vec2f pidx) {
   return interpolate(q, pidx, P);
 }
 
-vec2f uidx_to_vidx(vec2i uidx) {
+vec2f vidx_from_u(vec2i uidx) {
   return (vec2f){ uidx.x + 0.5f, uidx.y - 0.5f };
 }
 
@@ -387,7 +386,7 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
       if (u_property(g_fluid, uidx)) {
         // find the velocity at the sample point
         float dx = u[y][x];
-        float dy = interpolate_v(v, uidx_to_vidx(uidx));
+        float dy = interpolate_v(v, vidx_from_u(uidx));
         // extrapolate backwards through time to find
         // where the fluid came from
         vec2f prev = { x - dx*dt / k_side_length,
@@ -399,7 +398,7 @@ void advect_u(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
   }
 }
 
-vec2f vidx_to_uidx(vec2i vidx) {
+vec2f uidx_from_v(vec2i vidx) {
   return (vec2f){ vidx.x - 0.5f, vidx.y + 0.5f };
 }
 
@@ -410,7 +409,7 @@ void advect_v(float u[Y][X], float v[Y][X], float dt, float out[Y][X]) {
       if (v_property(g_fluid, vidx)) {
         // find the velocity at the sample point
         float dy = v[y][x];
-        float dx = interpolate_u(u, vidx_to_uidx(vidx));
+        float dx = interpolate_u(u, uidx_from_v(vidx));
         // extrapolate backwards through time to find
         // where the fluid came from
         vec2f prev = { x - dx*dt / k_side_length,

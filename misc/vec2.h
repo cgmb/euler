@@ -55,6 +55,6 @@ static inline vec2i right(vec2i i) {
   return (vec2i){ i.x + 1, i.y };
 }
 
-static inline vec2i to_vec2i(vec2f v) {
+static inline vec2i v2i_trunc(vec2f v) {
   return (vec2i){ (int)v.x, (int)v.y };
 }
